@@ -17,7 +17,7 @@
     the object will always refer to the top of the hierarchy.
 */
 
-var Utils = require("../utils");
+var Utils = require("./utils");
 
 
 var OJGlobalVariable          = "$oj_oj";
@@ -389,7 +389,7 @@ function makeClassPiece(classSymbol)
 
 // CLS_SYMBOL.$oj_super.METHOD_SYMBOL.call(this)
 //
-function makeCallSuperClassMethodPiece(classSymbol, methodSymbol, usePrototype)
+function makeCallSuperClassMethodPiece(classSymbol, methodSymbol)
 {
     var argumentsArray;
 

@@ -10,7 +10,7 @@ var Syntax      = esprima.Syntax;
 var Builder     = require("./builder");
 var Modifier    = require("./modifier");
 var Generator   = require("./generator");
-var Transformer = require("./transformer/Transformer");
+var Transformer = require("./transformer");
 
 var Hinter      = require("./hinter");
 var TypeChecker = require("./typechecker");

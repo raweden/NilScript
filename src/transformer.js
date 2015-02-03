@@ -5,7 +5,7 @@
 */
 
 var _          = require("lodash");
-var esprima    = require("../esprima");
+var esprima    = require("./esprima");
 var Syntax     = esprima.Syntax;
 
 var Modifier   = require("./modifier");
@@ -211,88 +211,51 @@ Transformer.prototype.generate = function()
 
     function replaceMessageExpression(node)
     {
-        var receiver     = node.receiver.value;
-        var methodName   = generator.getSymbolForSelectorName(node.selectorName);
-        var reserved     = Utils.isJScriptReservedWord(methodName);
-        var hasArguments = false;
+        return Traverser.RemoveNode;
 
-        var firstSelector, lastSelector;
+    /*
+        var selectorName = node.selectorName;
+        var methodName   = generator.getSymbolForSelectorName(selectorName);
+
+        var messageSelectors = node.messageSelectors;
+        var receiverNode     = node.receiver.value;
+        var argumentNodes    = [ ];
+
+        var replacementPiece;
+
+        for (var i = 0, length = messageSelectors.length; i < length; i++) {
+            argumentNodes.push(messageSelectors[i].argument);
+        }
 
         if (knownSelectors && !knownSelectors[node.selectorName]) {
             warnings.push(Utils.makeError(OJWarning.UnknownSelector, "Use of unknown selector '" + node.selectorName + "'", node));
         }
 
-        for (var i = 0, length = node.messageSelectors.length; i < length; i++) {
-            var messageSelector = node.messageSelectors[i];
-
-            if (messageSelector.arguments || messageSelector.argument) {
-                hasArguments = true;
-            }
-        }
-
-        function replaceMessageSelectors()
-        {
-            for (var i = 0, length = node.messageSelectors.length; i < length; i++) {
-                var messageSelector = node.messageSelectors[i];
-
-                if (!firstSelector) {
-                    firstSelector = messageSelector;
-                }
-
-                if (messageSelector.arguments) {
-                    var lastArgument = messageSelector.arguments[messageSelector.arguments.length - 1];
-
-                    modifier.from(messageSelector).to(messageSelector.arguments[0]).replace("[");
-                    modifier.after(lastArgument).insert("]");
-
-                    lastSelector = lastArgument;
-
-                } else if (messageSelector.argument) {
-                    modifier.from(messageSelector).to(messageSelector.argument).remove();
-                    lastSelector = messageSelector.argument;
-
-                    if (i < (length - 1)) {
-                        var nextSelector = node.messageSelectors[i+1];
-                        modifier.from(messageSelector.argument).to(nextSelector).replace(",");
-                    }
-
-                } else {
-                    modifier.select(messageSelector).remove()
-                    lastSelector = messageSelector;
-                    messageSelector.oj_skip = true;
-                }
-            }        
-        }
-
-        function doCommonReplacement(start, end) {
-            replaceMessageSelectors();
-
-            node.receiver.oj_skip = true;
-
-            modifier.from(node).to(firstSelector).replace(start);
-            modifier.from(lastSelector).to(node).replace(end);
-        }
-
         // Optimization cases
-        if (receiver.type == Syntax.Identifier && currentMethodNode && !reserved) {
+        if (receiverNode.type == Syntax.Identifier && currentMethodNode) {
             var usesSelf   = methodUsesSelfVar;
             var selfOrThis = usesSelf ? "self" : "this";
             var useProto   = (currentMethodNode.selectorType != "+");
 
+            var classSymbol, methodSymbol;
+
             if (receiver.name == "super") {
-                if (useProto) {
-                    template = cloneExpressionTemplate("CLS_NAME.$oj_super.prototype.METHOD_NAME.call(this)");
+                classSymbol = transformer.getSymbolForClassName(className);
+
+                if (currentMethodNode.selectorType == "+") {
+                    replacementPiece = Tree.makeCallSuperClassMethodPiece(classSymbol, methodSymbol);
                 } else  {
-                    template = cloneExpressionTemplate("CLS_NAME.$oj_super.METHOD_NAME.call(this)");
+                    replacementPiece = Tree.makeCallSuperInstanceMethodPiece(classSymbol, methodSymbol);
                 }
 
             } else if (model.classes[receiver.name]) {
+                classSymbol = transformer.getSymbolForClassName(receiver.name);
+
                 if (methodName == "alloc") {
-                    node.receiver.oj_skip = true;
-                    modifier.select(node).replace("new " + classVariable + "()");
-                    return;
+                    replacementPiece = Tree.makeClassPiece(classSymbol);
+                    return Tree.wrapInNew(replacementPiece.result);
                 } else {
-                    template = cloneExpressionTemplate("CLS_NAME.$oj_super.METHOD_NAME.call(this)");
+                    replacementPiece = 
 
                 }
 
@@ -379,8 +342,8 @@ Transformer.prototype.generate = function()
 
         modifier.from(receiver).to(firstSelector).replace("," + selector + (hasArguments ? "," : ""));
         modifier.from(lastSelector).to(node).replace(")");
-    }
 */
+    }
 
     function replaceClassImplementation(inNode)
     {

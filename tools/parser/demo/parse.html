@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<head>
+<meta charset="utf-8" />
+<title>Esprima (oj): Parser</title>
+<script src="yui-min.js"></script>
+<script src="../../../src/esprima.js"></script>
+<script src="../assets/orion/built-editor.min.js"></script>
+<script src="../assets/orion/customeditor.js"></script>
+<script src="js_beautify.js"></script>
+<script src="parse.js"></script>
+<link rel="stylesheet" href="main.css">
+</head>
+
+<body>
+
+<div class="row">
+<div class="six columns">
+
+<pre id="editor" spellcheck="false" style="height: 350px">
+</pre>
+
+<div id="info" class="alert-box secondary">Ready.</div>
+    <div class="twelve columns">
+    <label><input type="checkbox" id="loc"> Line and column-based location</label>
+    <label><input type="checkbox" id="comment"> Attach comments</label>
+    <label><input type="checkbox" id="root"> Show root node</label>
+    </div>
+</div>
+
+<div class="six columns">
+    <dl class="tabs">
+        <dd id="show_syntax" class="active"><a href="#">Syntax</a></dd>
+        <dd id="show_tree"><a href="#">Tree</a></dd>
+        <dd id="show_tokens"><a href="#">Tokens</a></dd>
+    </dl>
+    <ul class="tabs-content">
+        <li class="active" id="tab_syntax"><textarea wrap="off" id="syntax" rows="30" readonly></textarea><li>
+        <li id="tab_tree" style="display:none">
+            <input class="small radius button secondary right" type="button" value="Collapse All" id="collapse">&nbsp;
+            <input class="small radius button secondary right" type="button" value="Expand All" id="expand">
+            <div class="yui3-skin-sam"><div id="treeview"></div>
+        </li>
+        <li id="tab_tokens" style="display:none"><textarea id="tokens" rows="30" readonly></textarea><li>
+    </ul>
+</div>
+
+</div>
+
+
+</body>
+</html>

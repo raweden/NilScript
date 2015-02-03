@@ -1,0 +1,14 @@
+#!/bin/sh
+
+~/Projects/oj/bin/ojc $1 -o /tmp/1.js
+~/Projects/oj/bin/ojc --use-transformer $1 -o /tmp/2.js
+
+jsmin < /tmp/1.js > /tmp/1m.js
+jsmin < /tmp/2.js > /tmp/2m.js
+
+js-beautify /tmp/1m.js -o /tmp/1b.js
+js-beautify /tmp/2m.js -o /tmp/2b.js
+
+opendiff /tmp/1b.js /tmp/2b.js
+
+

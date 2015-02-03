@@ -10,6 +10,7 @@ var Syntax      = esprima.Syntax;
 var Builder     = require("./builder");
 var Modifier    = require("./modifier");
 var Generator   = require("./generator");
+var Transformer = require("./transformer/Transformer");
 
 var Hinter      = require("./hinter");
 var TypeChecker = require("./typechecker");
@@ -19,6 +20,10 @@ var OJModel     = require("./model").OJModel;
 
 var _           = require("lodash");
 var fs          = require("fs");
+var escodegen   = require("escodegen");
+var esvalid     = require("esvalid");
+var util        = require("util");
+
 
 function errorForEsprimaError(inError)
 {
@@ -260,9 +265,23 @@ Compiler.prototype.compile = function(callback)
             });
         }
 
+
+        // Transform
+        if (options["use-transformer"]) {
+            var transformer = new Transformer(ast, model, transpileModifier, false, options);
+            time("Generate", function() {
+                transformer.generate();
+            });
+
+
+            console.log(util.inspect(esvalid.errors(ast), { depth: null }));
+
+            result.code = escodegen.generate(ast);
+        }
+
         if (options["dump-ast"]) {
-            result.ast = JSON.stringify(this._ast, function(key, value) {
-                if (key == "parent") {
+            result.ast = JSON.stringify(ast, function(key, value) {
+                if (key == "oj_parent") {
                     return undefined;
                 }
                 return value;

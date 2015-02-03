@@ -49,11 +49,22 @@ function Traverser(ast)
 
 
 Traverser.SkipNode = estraverse.VisitorOption.Skip;
-
+Traverser.RemoveNode = estraverse.VisitorOption.Remove;
 
 Traverser.prototype.traverse = function(pre, post)
 {
     this._controller.traverse(this._ast, {
+        enter: pre,
+        leave: post,
+        keys:  ojVisitorKeys
+    });
+}
+
+
+
+Traverser.prototype.replace = function(pre, post)
+{
+    this._controller.replace(this._ast, {
         enter: pre,
         leave: post,
         keys:  ojVisitorKeys

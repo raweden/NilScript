@@ -143,6 +143,7 @@ OJModel.prototype.getSqueezedName = function(oldName, add)
 
 OJModel.prototype.loadState = function(state)
 {
+    var model     = this;
     var enums     = this.enums;
     var classes   = this.classes;
     var protocols = this.protocols;
@@ -165,6 +166,7 @@ OJModel.prototype.loadState = function(state)
         var cls = new OJClass();
         cls.loadState(c);
         classes[cls.name] = cls;
+        cls.model = model;
     });
 
     _.each(state.protocols, function(p) {
@@ -338,6 +340,7 @@ OJModel.prototype.addClass = function(cls)
         if (existing.forward && !cls.forward) {
             this.classes[name] = cls;
             this.registerType(cls.name);
+            cls.model = this;
 
         } else if (!existing.forward && !cls.forward) {
             Utils.throwError(OJError.DuplicateClassDefinition, "Duplicate declaration of class '" + name +"'");
@@ -346,6 +349,7 @@ OJModel.prototype.addClass = function(cls)
     } else {
         this.classes[name] = cls;
         this.registerType(cls.name);
+        cls.model = this;
     } 
 }
 
@@ -445,6 +449,7 @@ function OJClass(name, superclassName)
     this.name           = name;
     this.superclassName = superclassName;
     this.forward        = false;
+    this.model          = null;
 
     this._ivarMap           = { };
     this._propertyMap       = { };
@@ -738,6 +743,40 @@ OJClass.prototype.addMethod = function(method)
 OJClass.prototype.getAllIvars = function()
 {
     return _.values(this._ivarMap);
+}
+
+
+OJClass.prototype.getTypeToSortedIvarNameMap = function()
+{
+    var ivars = this.getAllIvars();
+    var model = this.model;
+
+    var booleanIvarNames = [ ];
+    var numberIvarNames  = [ ];
+    var objectIvarNames  = [ ];
+    var i, length, ivar, ivarName;
+
+    for (i = 0, length = ivars.length; i < length; i++) {
+        ivar = ivars[i];
+
+        if (this.model.isNumericType(ivar.type)) {
+            numberIvarNames.push(ivar.name);
+        } else if (this.model.isBooleanType(ivar.type)) {
+            booleanIvarNames.push(ivar.name);
+        } else {
+            objectIvarNames.push(ivar.name);
+        }
+    }
+
+    booleanIvarNames.sort();
+    numberIvarNames.sort();
+    objectIvarNames.sort();
+
+    return {
+        "boolean": booleanIvarNames,
+        "number":  numberIvarNames,
+        "object":  objectIvarNames
+    }
 }
 
 

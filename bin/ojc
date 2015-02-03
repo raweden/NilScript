@@ -49,6 +49,7 @@ var opt = getopt.create([
     [ "",  "dump-time",                 "(for development)" ],
     [ "",  "dump-profile",              "(for development)" ],
     [ "",  "dump-scope",                "(for development)" ],
+    [ "",  "use-transformer",           "(for development)" ],
 
     [ "h", "help",                      "display this help" ],
     [ "v", "version",                   "show version"      ]

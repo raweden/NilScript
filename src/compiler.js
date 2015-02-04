@@ -242,7 +242,7 @@ Compiler.prototype.compile = function(callback)
         }
 
         // Transpiler
-        if (transpileGenerator) {
+        if (!options["use-transformer"] && transpileGenerator) {
             // Do second pass with Generator
             time("Generate", function() {
                 transpileGenerator.generate();
@@ -268,15 +268,21 @@ Compiler.prototype.compile = function(callback)
 
         // Transform
         if (options["use-transformer"]) {
-            var transformer = new Transformer(ast, model, transpileModifier, false, options);
-            time("Generate", function() {
-                transformer.generate();
+            time("Transform", function() {
+                // profiler.startProfiling("transformer");
+                Transformer.transform(ast, model, options);
+                // var cpuProfile = profiler.stopProfiling("transformer");
+                // fs.writeFileSync("out.cpuprofile", JSON.stringify(cpuProfile));
             });
 
+            time("Transform - gen", function() {
+                result.code = escodegen.generate(ast);
 
-            console.log(util.inspect(esvalid.errors(ast), { depth: null }));
+            });
 
-            result.code = escodegen.generate(ast);
+            // console.log(util.inspect(esvalid.errors(ast), { depth: null }));
+
+            // result.code = escodegen.generate(ast);
         }
 
         if (options["dump-ast"]) {

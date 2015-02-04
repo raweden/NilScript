@@ -23,7 +23,7 @@
     }],
     "devDependencies": {
         "mocha": "*",
-        "cpu-profiler": "1.x"
+        "v8-profiler": "*"
     },
     "dependencies": {
         "lodash":      "2.x",

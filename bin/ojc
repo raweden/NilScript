@@ -190,7 +190,7 @@ var cacheFile = options["cache"];
 try {
     var profiler;
     if (dumpProfile) {
-        profiler = require("../src/profiler");
+        profiler = require("v8-profiler");
         profiler.startProfiling("ojc");
     }
 

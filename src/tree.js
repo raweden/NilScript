@@ -18,12 +18,10 @@
 */
 
 var Utils = require("./utils");
+var _     = require("lodash");
 
 
 var OJGlobalVariable          = "$oj_oj";
-var OJClassPrefix             = "$oj_c_";
-var OJMethodPrefix            = "$oj_f_";
-var OJIvarPrefix              = "$oj_i_";
 var OJClassMethodsVariable    = "$oj_s";
 var OJInstanceMethodsVariable = "$oj_m";
 var OJTemporaryReturnVariable = "$oj_r";
@@ -52,6 +50,22 @@ function getFalseLiteral()
     return { "type": "Literal", "value": false, "raw": "false" };
 }
 Tree.getFalseLiteral = getFalseLiteral;
+
+
+function getNumericLiteral(value)
+{
+    if (value < 0) {
+        return {
+            "type": "UnaryExpression",
+            "operator": "-",
+            "argument": { "type": "Literal", "value": -value, "raw": ('"' + (-value) + '"') },
+            "prefix": true
+        };
+
+    } else {
+        return { "type": "Literal", "value": value, "raw": ('"' + value + '"') };
+    }
+}
 
 
 function getIdentifier(name)
@@ -369,6 +383,40 @@ function makePropertyGetterPiece(methodSymbol, ivarSymbol)
 Tree.makePropertyGetterPiece = makePropertyGetterPiece;
 
 
+function makeMethodDeclarationPiece(isClassMethod, methodSymbol)
+{
+    var where = (isClassMethod ? OJClassMethodsVariable : OJInstanceMethodsVariable);
+    var body;
+    var params;
+
+    var result = {
+        "type": "AssignmentExpression",
+        "operator": "=",
+        "left": {
+            "type": "MemberExpression",
+            "object":   { "type": "Identifier", "name": where        },
+            "property": { "type": "Identifier", "name": methodSymbol }
+        },
+        "right": {
+            "type": "FunctionExpression",
+            "id": null,
+            "params": (params = []),
+            "body": {
+                "type": "BlockStatement",
+                "body": (body = [])
+            }
+        }
+    };
+
+    return {
+        result: result,
+        params: params,
+        body: body
+    }
+}
+Tree.makeMethodDeclarationPiece = makeMethodDeclarationPiece;
+
+
 // $oj_oj._cls.CLASS_SYMBOL
 //
 function makeClassPiece(classSymbol)
@@ -385,11 +433,12 @@ function makeClassPiece(classSymbol)
         "property": { "type": "Identifier", "name": classSymbol }
     }};
 }
+Tree.makeClassPiece = makeClassPiece;
 
 
-// CLS_SYMBOL.$oj_super.METHOD_SYMBOL.call(this)
+// CLASS_NAME.$oj_super.METHOD_SYMBOL.call(this)
 //
-function makeCallSuperClassMethodPiece(classSymbol, methodSymbol)
+function makeCallSuperClassMethodPiece(className, methodSymbol)
 {
     var argumentsArray;
 
@@ -401,7 +450,7 @@ function makeCallSuperClassMethodPiece(classSymbol, methodSymbol)
                 "type": "MemberExpression",
                 "object": {
                     "type": "MemberExpression",
-                    "object":   { "type": "Identifier", "name": classSymbol },
+                    "object":   { "type": "Identifier", "name": className },
                     "property": { "type": "Identifier", "name": OJSuperVariable }
                 },
                 "property": { "type": "Identifier", "name": methodSymbol }
@@ -419,9 +468,9 @@ function makeCallSuperClassMethodPiece(classSymbol, methodSymbol)
 Tree.makeCallSuperClassMethodPiece = makeCallSuperClassMethodPiece;
 
 
-// CLS_SYMBOL.$oj_super.prototype.METHOD_SYMBOL.call(this)
+// CLASS_NAME.$oj_super.prototype.METHOD_SYMBOL.call(this)
 //
-function makeCallSuperInstanceMethodPiece(classSymbol, methodSymbol)
+function makeCallSuperInstanceMethodPiece(className, methodSymbol)
 {
     var argumentsArray;
 
@@ -435,7 +484,7 @@ function makeCallSuperInstanceMethodPiece(classSymbol, methodSymbol)
                     "type": "MemberExpression",
                     "object": {
                         "type": "MemberExpression",
-                        "object":   { "type": "Identifier", "name": classSymbol },
+                        "object":   { "type": "Identifier", "name": className },
                         "property": { "type": "Identifier", "name": OJSuperVariable }
                     },
                     "property": { "type": "Identifier", "name": "prototype" }
@@ -471,16 +520,13 @@ function makeCallToSelfPiece(usesSelfVariable, methodSymbol)
     var argumentsArray;
 
     var result = {
-        "type": "ExpressionStatement",
-        "expression": {
-            "type": "CallExpression",
-            "callee": {
-                "type": "MemberExpression",
-                "object":   object,
-                "property": { "type": "Identifier", "name": methodSymbol }
-            },
-            "arguments": (argumentsArray = [])
-        }
+        "type": "CallExpression",
+        "callee": {
+            "type": "MemberExpression",
+            "object":   object,
+            "property": { "type": "Identifier", "name": methodSymbol }
+        },
+        "arguments": (argumentsArray = [])
     };
 
     return {
@@ -493,27 +539,30 @@ Tree.makeCallToSelfPiece = makeCallToSelfPiece;
 
 // RECEIVER && RECEIVER.METHOD_SYMBOL()
 //
-function makeCallToReceiverPiece(receiverSymbol, methodSymbol)
+function makeCallToReceiverPiece(receiverNode, methodSymbol, includeCheck)
 {
     var argumentsArray;
 
     var result = {
-        "type": "ExpressionStatement",
-        "expression": {
+        "type": "CallExpression",
+        "callee": {
+            "type": "MemberExpression",
+            "object":   receiverNode,
+            "property": { "type": "Identifier", "name": methodSymbol }
+        },
+        "arguments": (argumentsArray = [])
+    };
+
+    if (includeCheck) {
+        receiverNode.loc = null;
+
+        result = {
             "type": "LogicalExpression",
             "operator": "&&",
-            "left": { "type": "Identifier", "name": receiverSymbol },
-            "right": {
-                "type": "CallExpression",
-                "callee": {
-                    "type": "MemberExpression",
-                    "object":   { "type": "Identifier", "name": receiverSymbol },
-                    "property": { "type": "Identifier", "name": methodSymbol   }
-                },
-                "arguments": (argumentsArray = [])
-            }
+            "left": receiverNode,
+            "right": result
         }
-    };
+    }
 
     return {
         result: result,
@@ -530,25 +579,22 @@ function makeCallToExpressionPiece(expressionNode, methodSymbol)
     var argumentsArray;
 
     var result = {
-        "type": "ExpressionStatement",
-        "expression": {
-            "type": "LogicalExpression",
-            "operator": "&&",
-            "left": {
-                "type": "AssignmentExpression",
-                "operator": "=",
-                "left":  { "type": "Identifier", "name": "$oj_r" },
-                "right": expressionNode
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+            "type": "AssignmentExpression",
+            "operator": "=",
+            "left":  { "type": "Identifier", "name": OJTemporaryReturnVariable },
+            "right": expressionNode
+        },
+        "right": {
+            "type": "CallExpression",
+            "callee": {
+                "type": "MemberExpression",
+                "object":   { "type": "Identifier", "name": OJTemporaryReturnVariable },
+                "property": { "type": "Identifier", "name": methodSymbol }
             },
-            "right": {
-                "type": "CallExpression",
-                "callee": {
-                    "type": "MemberExpression",
-                    "object":   { "type": "Identifier", "name": OJTemporaryReturnVariable },
-                    "property": { "type": "Identifier", "name": methodSymbol }
-                },
-                "arguments": (argumentsArray = [])
-            }
+            "arguments": (argumentsArray = [])
         }
     };
 
@@ -562,21 +608,18 @@ Tree.makeCallToExpressionPiece = makeCallToExpressionPiece;
 
 // $oj_oj.msgSend()
 //
-function makeMsgSendPiece(expressionNode, methodSymbol)
+function makeMsgSendPiece()
 {
     var argumentsArray;
 
     var result = {
-        "type": "ExpressionStatement",
-        "expression": {
-            "type": "CallExpression",
-            "callee": {
-                "type": "MemberExpression",
-                "object":   { "type": "Identifier", "name": OJGlobalVariable },
-                "property": { "type": "Identifier", "name": "msgSend" }
-            },
-            "arguments": (argumentsArray = [])
-        }
+        "type": "CallExpression",
+        "callee": {
+            "type": "MemberExpression",
+            "object":   { "type": "Identifier", "name": OJGlobalVariable },
+            "property": { "type": "Identifier", "name": "msgSend" }
+        },
+        "arguments": (argumentsArray = [])
     };
 
     return {
@@ -636,7 +679,7 @@ function makeNumericVariableDeclaratorPiece(name, value)
     return { result: {
         "type": "VariableDeclarator",
         "id":   { "type": "Identifier", "name": name },
-        "init": { "type": "Literal", "value": value, "raw": ('"' + value + '"') }
+        "init": getNumericLiteral(value)
     } };
 }
 Tree.makeNumericVariableDeclaratorPiece = makeNumericVariableDeclaratorPiece;

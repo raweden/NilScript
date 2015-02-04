@@ -74,6 +74,7 @@ Builder.prototype.build = function()
     var currentProtocol;
 
     var enableBlockScope = this._options["enable-block-scope"];
+    var addParent = !this._options["use-transformer"];
 
     var traverser = new Traverser(this._ast);
 
@@ -140,6 +141,10 @@ Builder.prototype.build = function()
     function handleMethodDefinition(node)
     {
         makeScope(node, true);
+
+        if (Utils.isReservedSelectorName(node.selectorName)) {
+            Utils.throwError(OJError.ReservedMethodName, "The method name \"" + node.selectorName + "\" is reserved by the runtime and may not be overridden.", node);
+        }
 
         var method = sMakeOJMethodForNode(node, enableBlockScope ? currentScope : null);
         currentClass.addMethod(method);
@@ -385,7 +390,7 @@ Builder.prototype.build = function()
     traverser.traverse(function(node, parent) {
         var type = node.type;
 
-        if (parent) {
+        if (parent && addParent) {
             node.oj_parent = parent;
         }
 

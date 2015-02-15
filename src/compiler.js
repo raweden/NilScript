@@ -29,7 +29,7 @@ function errorForEsprimaError(inError)
 {
     var line = inError.lineNumber;
 
-    var message = inError.description;
+    var message = inError.description ? inError.description : ("" + inError);
     message = message.replace(/$.*Line:/, "");
 
     var outError = new Error(message);

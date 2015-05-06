@@ -565,13 +565,13 @@ OJClass.prototype.doAutomaticSynthesis = function()
         }
 
         if (getter && !getterMethod) {
-            getterMethod = new OJMethod(getter, "-", property.type, [ ]);
+            getterMethod = new OJMethod(getter, "-", property.type, [ ], [ ]);
             getterMethod.synthesized = true;
             this._instanceMethodMap[getter] = getterMethod;
         }
 
         if (setter && !setterMethod) {
-            setterMethod = new OJMethod(setter, "-", "void", [ property.type ]);
+            setterMethod = new OJMethod(setter, "-", "void", [ property.type ], [ ]);
             setterMethod.synthesized = true;
             this._instanceMethodMap[setter] = setterMethod;
         }

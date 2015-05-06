@@ -45,8 +45,10 @@ function transform(ast, model, options)
 
     var scope = model.scope;
 
-    var currentClass;
-    var currentMethodNode;
+    var currentClass      = null;
+    var currentMethodNode = null;
+    var inClass      = false;
+    var inMethodNode = false;
 
     var methodUsesSelfVar        = false;
     var methodUsesTemporaryVar   = false;
@@ -156,7 +158,7 @@ function transform(ast, model, options)
         }
 
         // Slow case, use oj.msgSend()
-        if (!currentMethodNode) {
+        if (!inMethodNode) {
             if ((receiverNode.type == Syntax.Identifier) && model.classes[receiverNode.name]) {
                 classSymbol = getSymbolForClassName(receiverNode.name);
                 receiverNode = Tree.makeClassPiece(classSymbol).result;
@@ -174,7 +176,7 @@ function transform(ast, model, options)
         } else if (receiverNode.type == Syntax.Identifier) {
             var receiverName = receiverNode.name;
 
-            if (!currentMethodNode) {
+            if (!inMethodNode) {
                 //!i: Throw here
 
                 if (receiverName == "super" && receiverName == "self") {
@@ -201,7 +203,7 @@ function transform(ast, model, options)
                     replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, false);
                 }
             
-            } else if (currentClass && currentClass.isIvar(receiverName)) {
+            } else if (inClass && currentClass.isIvar(receiverName)) {
                 methodUsesLoneExpression = true;
 
                 receiverNode = Tree.makeIvarPiece(methodUsesSelfVar, getSymbolForClassNameAndIvarName(currentClass.name, receiverName)).result;
@@ -212,7 +214,7 @@ function transform(ast, model, options)
                 replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, true);
             }
 
-        } else if (currentMethodNode) {
+        } else if (inMethodNode) {
             methodUsesTemporaryVar   = true;
             methodUsesLoneExpression = true;
 
@@ -376,9 +378,9 @@ function transform(ast, model, options)
             canBeInstanceVariableOrSelf = (parent.object == node);
         }
 
-        if (currentMethodNode && currentClass && canBeInstanceVariableOrSelf) {
+        if (inMethodNode && inClassNode && canBeInstanceVariableOrSelf) {
             if (currentClass.isIvar(name) || name == "self") {
-                var usesSelf = currentMethodNode && methodUsesSelfVar;
+                var usesSelf = inMethodNode && methodUsesSelfVar;
 
                 if (name == "self") {
                     replacement = Tree.makeIvarPiece(usesSelf, null).result;
@@ -559,6 +561,7 @@ function transform(ast, model, options)
 
         } else if (type === Syntax.OJClassImplementation) {
             currentClass = model.classes[node.id.name];
+            inClass = true;
 
             if (optionWarnOnUnusedIvars) {
                 unusedIvars = currentClass.getAllIvarNamesWithoutProperties();
@@ -566,6 +569,7 @@ function transform(ast, model, options)
 
         } else if (type === Syntax.OJMethodDefinition) {
             currentMethodNode        = node;
+            inMethodNode             = true;
             methodUsesSelfVar        = false;
             methodUsesTemporaryVar   = false;
             methodUsesLoneExpression = false;
@@ -576,7 +580,7 @@ function transform(ast, model, options)
             }
 
         } else if (type === Syntax.AssignmentExpression) {
-            if (currentMethodNode &&
+            if (inMethodNode &&
                 node.left &&
                 node.left.type == Syntax.Identifier &&
                 node.left.name == "self")
@@ -596,6 +600,7 @@ function transform(ast, model, options)
             replacement = replaceClassImplementation(node);
 
             currentClass = null;
+            inClass = false;
 
             if (optionWarnOnUnusedIvars && unusedIvars && unusedIvars.length) {
                 _.each(unusedIvars, function(unusedIvar) {
@@ -608,6 +613,7 @@ function transform(ast, model, options)
         } else if (type === Syntax.OJMethodDefinition) {
             replacement = replaceMethodDefinition(node);
             currentMethodNode = null;
+            inMethodNode = false;
 
         } else if (type == Syntax.OJMessageExpression) {
             replacement = replaceMessageExpression(node);

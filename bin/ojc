@@ -46,6 +46,7 @@ var opt = getopt.create([
 
     [ "",  "debug-message-send",        "use debug version of oj.msgSend" ],
     [ "",  "dump-ast",                  "(for development)" ],
+    [ "",  "dump-modifier",             "(for development)" ],
     [ "",  "dump-time",                 "(for development)" ],
     [ "",  "dump-profile",              "(for development)" ],
     [ "",  "dump-scope",                "(for development)" ],

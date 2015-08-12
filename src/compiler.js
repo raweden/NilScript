@@ -287,7 +287,7 @@ Compiler.prototype.compile = function(callback)
 
         if (options["dump-ast"]) {
             result.ast = JSON.stringify(ast, function(key, value) {
-                if (key == "oj_parent") {
+                if (key == "oj_parent" || key == "oj_scope") {
                     return undefined;
                 }
                 return value;

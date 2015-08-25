@@ -194,6 +194,7 @@
         OJConstDeclaration: 'OJConstDeclaration',
         OJEnumDeclaration: 'OJEnumDeclaration',
         OJProtocolDefinition: 'OJProtocolDefinition',
+        OJProtocolList: 'OJProtocolList',
         OJMethodDeclaration: 'OJMethodDeclaration',
         OJAtCastExpression: 'OJAtCastExpression',
         OJTypeAnnotation: 'OJTypeAnnotation',
@@ -2460,11 +2461,13 @@
             return this;
         },
 
-        oj_finishClassImplementation: function (id, superClass, ivarDeclarations, body) {
+        oj_finishClassImplementation: function (id, superClass, category, protocolList, ivarDeclarations, body) {
             this.type = Syntax.OJClassImplementation;
             this.id   = id;
             this.body = body;
             this.superClass = superClass;
+            this.category = category;
+            this.protocols = protocolList;
             this.ivarDeclarations = ivarDeclarations;
             this.finish();
             return this;        
@@ -2595,9 +2598,17 @@
             return this;
         },
 
-        oj_finishProtocolDefinition: function (id, body) {
+        oj_finishProtocolList: function (protocols) {
+            this.type = Syntax.OJProtocolList;
+            this.protocols = protocols;
+            this.finish();
+            return this;
+        },
+
+        oj_finishProtocolDefinition: function (id, protocols, body) {
             this.type = Syntax.OJProtocolDefinition;
             this.id = id;
+            this.protocols = protocols;
             this.body = body;
             this.finish();
             return this;
@@ -6316,7 +6327,7 @@
     }
 
     function oj_parseClassImplementationDefinition(node) {
-        var id, body, previousStrict, ivarDeclarations, superClass, oldLabelSet;
+        var id, body, previousStrict, ivarDeclarations = null, superClass = null, category = null, protocols = null, oldLabelSet;
 
         if (state.oj_inImplementation) {
             throwError(lookahead, Messages.OJCannotNestImplementations);
@@ -6336,15 +6347,22 @@
         if (match(':')) {
             expect(':');
             superClass = parseVariableIdentifier();
-        } else {
-            superClass = null;
+        }
+
+        if (match('(')) {
+            expect('(');
+            category = parseVariableIdentifier();
+            expect(')');
+        }
+
+        if (match('<')) {
+            protocols = oj_parseProtocolReferenceList();
         }
 
         // Has ivar declarations
         if (match('{')) {
+            if (category) throwUnexpectedToken();
             ivarDeclarations = oj_parseInstanceVariableDeclarations();
-        } else {
-            ivarDeclarations = null;
         }
 
         body = oj_parseClassImplementationBody();
@@ -6355,9 +6373,31 @@
         state.oj_inImplementation = false;
         state.labelSet = oldLabelSet;
 
-        return node.oj_finishClassImplementation(id, superClass, ivarDeclarations, body);
+        return node.oj_finishClassImplementation(id, superClass, category, protocols, ivarDeclarations, body);
     }
 
+    function oj_parseProtocolReferenceList() {
+        var protocolList;
+
+        expect('<');
+        protocolList = oj_parseProtocolList();
+        expect('>');
+
+        return protocolList;
+    }
+
+    function oj_parseProtocolList() {
+        var protocols = [], node = new Node();
+
+        protocols.push(parseVariableIdentifier());
+
+        while (match(',')) {
+            expect(',');
+            protocols.push(parseVariableIdentifier());
+        }
+
+        return node.oj_finishInstanceVariableDeclarations(protocols);
+    }
 
     function oj_parseProtocolDefinitionBody() {
         var sourceElement, sourceElements = [], token, node = new Node();
@@ -6390,7 +6430,7 @@
     }
 
     function oj_parseProtocolDefinition() {
-        var id, body, previousStrict, oldLabelSet, node = new Node();
+        var id, body, previousStrict, oldLabelSet, protocols = null, node = new Node();
 
         if (state.oj_inImplementation) {
             throwError(lookahead, Messages.OJCannotNestImplementations);
@@ -6406,6 +6446,10 @@
 
         id = parseVariableIdentifier();
 
+        if (match('<')) {
+            protocols = oj_parseProtocolReferenceList();
+        }
+
         body = oj_parseProtocolDefinitionBody();
 
         expectKeyword('@end');
@@ -6414,7 +6458,7 @@
         state.oj_inImplementation = false;
         state.labelSet = oldLabelSet;
 
-        return node.oj_finishProtocolDefinition(id, body);
+        return node.oj_finishProtocolDefinition(id, protocols, body);
     }
 
     function oj_parseAtClassDirective(node) {

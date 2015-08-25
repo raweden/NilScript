@@ -378,7 +378,7 @@ function transform(ast, model, options)
             canBeInstanceVariableOrSelf = (parent.object == node);
         }
 
-        if (inMethodNode && inClassNode && canBeInstanceVariableOrSelf) {
+        if (inMethodNode && canBeInstanceVariableOrSelf) {
             if (currentClass.isIvar(name) || name == "self") {
                 var usesSelf = inMethodNode && methodUsesSelfVar;
 

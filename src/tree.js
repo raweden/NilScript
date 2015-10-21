@@ -52,6 +52,13 @@ function getFalseLiteral()
 Tree.getFalseLiteral = getFalseLiteral;
 
 
+function getThisExpression()
+{
+    return { "type": "ThisExpression" };
+}
+Tree.getThisExpression = getThisExpression;
+
+
 function getNumericLiteral(value)
 {
     if (value < 0) {
@@ -84,6 +91,17 @@ function wrapInNew(node)
     };
 }
 Tree.wrapInNew = wrapInNew;
+
+
+function wrapInVariableDeclarator(id, init)
+{
+    return {
+        "type": "VariableDeclarator",
+        "id": id,
+        "init": init
+    };
+}
+Tree.wrapInVariableDeclarator = wrapInVariableDeclarator;
 
 
 function wrapInExpressionStatement(node)

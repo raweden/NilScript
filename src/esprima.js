@@ -48,7 +48,6 @@
         Regex,
         source,
         strict,
-        sourceType,
         index,
         lineNumber,
         lineStart,
@@ -1474,8 +1473,8 @@
     }
 
     function scanRegExp() {
-        scanning = true;
         var start, body, flags, value;
+        scanning = true;
 
         lookahead = null;
         skipComment();
@@ -2187,13 +2186,10 @@
             return this;
         },
 
-        finishProgram: function (body) {
+        finishProgram: function (body, sourceType) {
             this.type = Syntax.Program;
             this.body = body;
-            if (sourceType === 'module') {
-                // very restrictive for now
-                this.sourceType = sourceType;
-            }
+            this.sourceType = sourceType;
             this.finish();
             return this;
         },
@@ -2301,7 +2297,7 @@
             this.type = Syntax.TryStatement;
             this.block = block;
             this.guardedHandlers = [];
-            this.handlers = handler ? [ handler ] : [];
+            this.handlers = handler ? [handler] : [];
             this.handler = handler;
             this.finalizer = finalizer;
             this.finish();
@@ -2682,12 +2678,30 @@
         extra.errors.push(error);
     }
 
+    function constructError(msg, column) {
+        var error = new Error(msg);
+        try {
+            throw error;
+        } catch (base) {
+            /* istanbul ignore else */
+            if (Object.create && Object.defineProperty) {
+                error = Object.create(base);
+                Object.defineProperty(error, 'column', { value: column });
+            }
+        } finally {
+            return error;
+        }
+    }
+
     function createError(line, pos, description) {
-        var error = new Error('Line ' + line + ': ' + description);
-        error.index = pos;
+        var msg, column, error;
+
+        msg = 'Line ' + line + ': ' + description;
+        column = pos - (scanning ? lineStart : lastLineStart) + 1;
+        error = constructError(msg, column);
         error.lineNumber = line;
-        error.column = pos - (scanning ? lineStart : lastLineStart) + 1;
         error.description = description;
+        error.index = pos;
         return error;
     }
 
@@ -2948,7 +2962,7 @@
 
     // ECMA-262 13.3.3 Destructuring Binding Patterns
 
-    function parseArrayPattern(params) {
+    function parseArrayPattern(params, kind) {
         var node = new Node(), elements = [], rest, restNode;
         expect('[');
 
@@ -2961,11 +2975,11 @@
                     restNode = new Node();
                     lex();
                     params.push(lookahead);
-                    rest = parseVariableIdentifier(params);
+                    rest = parseVariableIdentifier(params, kind);
                     elements.push(restNode.finishRestElement(rest));
                     break;
                 } else {
-                    elements.push(parsePatternWithDefault(params));
+                    elements.push(parsePatternWithDefault(params, kind));
                 }
                 if (!match(']')) {
                     expect(',');
@@ -2979,7 +2993,7 @@
         return node.finishArrayPattern(elements);
     }
 
-    function parsePropertyPattern(params) {
+    function parsePropertyPattern(params, kind) {
         var node = new Node(), key, keyToken, computed = match('['), init;
         if (lookahead.type === Token.Identifier) {
             keyToken = lookahead;
@@ -2997,20 +3011,20 @@
                 return node.finishProperty('init', key, false, key, false, true);
             }
         } else {
-            key = parseObjectPropertyKey(params);
+            key = parseObjectPropertyKey(params, kind);
         }
         expect(':');
-        init = parsePatternWithDefault(params);
+        init = parsePatternWithDefault(params, kind);
         return node.finishProperty('init', key, computed, init, false, false);
     }
 
-    function parseObjectPattern(params) {
+    function parseObjectPattern(params, kind) {
         var node = new Node(), properties = [];
 
         expect('{');
 
         while (!match('}')) {
-            properties.push(parsePropertyPattern(params));
+            properties.push(parsePropertyPattern(params, kind));
             if (!match('}')) {
                 expect(',');
             }
@@ -3021,19 +3035,19 @@
         return node.finishObjectPattern(properties);
     }
 
-    function parsePattern(params) {
+    function parsePattern(params, kind) {
         if (match('[')) {
-            return parseArrayPattern(params);
+            return parseArrayPattern(params, kind);
         } else if (match('{')) {
-            return parseObjectPattern(params);
+            return parseObjectPattern(params, kind);
         }
         params.push(lookahead);
-        return oj_parseVariableIdentifierWithOptionalTypeAnnotation(); //!oj: Allow type annotation
+        return oj_parseVariableIdentifierWithOptionalTypeAnnotation(kind); //!oj: Allow type annotation
     }
 
-    function parsePatternWithDefault(params) {
+    function parsePatternWithDefault(params, kind) {
         var startToken = lookahead, pattern, previousAllowYield, right;
-        pattern = parsePattern(params);
+        pattern = parsePattern(params, kind);
         if (match('=')) {
             lex();
             previousAllowYield = state.allowYield;
@@ -3370,7 +3384,7 @@
         var quasi, quasis, expressions, node = new Node();
 
         quasi = parseTemplateElement({ head: true });
-        quasis = [ quasi ];
+        quasis = [quasi];
         expressions = [];
 
         while (!quasi.tail) {
@@ -3496,7 +3510,7 @@
         }
 
         if (match('[')) {
-            return inheritCoverGrammar(oj_parseArrayInitialiserOrMessageExpression);  //!oj:
+            return inheritCoverGrammar(oj_parseArrayInitializerOrMessageExpression);  //!oj: Allow message expressions
         }
 
         if (match('{')) {
@@ -3507,7 +3521,7 @@
         node = new Node();
 
         if (type === Token.Identifier) {
-            if (sourceType === 'module' && lookahead.value === 'await') {
+            if (state.sourceType === 'module' && lookahead.value === 'await') {
                 tolerateUnexpectedToken(lookahead);
             }
             expr = node.finishIdentifier(lex().value);
@@ -3803,6 +3817,7 @@
             if (strict && expr.operator === 'delete' && expr.argument.type === Syntax.Identifier) {
                 tolerateError(Messages.StrictDelete);
             }
+            isAssignmentTarget = isBindingElement = false;
 //!oj: start changes
         } else if (matchKeyword('@cast')) {
             expr = oj_parseAtCastExpression();
@@ -4169,9 +4184,14 @@
                 tolerateError(Messages.InvalidLHSInAssignment);
             }
 
-            // ECMA-262 11.13.1
-            if (strict && expr.type === Syntax.Identifier && isRestrictedWord(expr.name)) {
-                tolerateUnexpectedToken(token, Messages.StrictLHSAssignment);
+            // ECMA-262 12.1.1
+            if (strict && expr.type === Syntax.Identifier) {
+                if (isRestrictedWord(expr.name)) {
+                    tolerateUnexpectedToken(token, Messages.StrictLHSAssignment);
+                }
+                if (isStrictModeReservedWord(expr.name)) {
+                    tolerateUnexpectedToken(token, Messages.StrictReservedWord);
+                }
             }
 
             if (!match('=')) {
@@ -4219,12 +4239,12 @@
         if (lookahead.type === Token.Keyword) {
             switch (lookahead.value) {
             case 'export':
-                if (sourceType !== 'module') {
+                if (state.sourceType !== 'module') {
                     tolerateUnexpectedToken(lookahead, Messages.IllegalExportDeclaration);
                 }
                 return parseExportDeclaration();
             case 'import':
-                if (sourceType !== 'module') {
+                if (state.sourceType !== 'module') {
                     tolerateUnexpectedToken(lookahead, Messages.IllegalImportDeclaration);
                 }
                 return parseImportDeclaration();
@@ -4267,7 +4287,7 @@
 
     // ECMA-262 13.3.2 Variable Statement
 
-    function parseVariableIdentifier() {
+    function parseVariableIdentifier(kind) {
         var token, node = new Node();
 
         token = lex();
@@ -4282,19 +4302,21 @@
             if (strict && token.type === Token.Keyword && isStrictModeReservedWord(token.value)) {
                 tolerateUnexpectedToken(token, Messages.StrictReservedWord);
             } else {
-                throwUnexpectedToken(token);
+                if (strict || token.value !== 'let' || kind !== 'var') {
+                    throwUnexpectedToken(token);
+                }
             }
-        } else if (sourceType === 'module' && token.type === Token.Identifier && token.value === 'await') {
+        } else if (state.sourceType === 'module' && token.type === Token.Identifier && token.value === 'await') {
             tolerateUnexpectedToken(token);
         }
 
         return node.finishIdentifier(token.value);
     }
 
-    function parseVariableDeclaration() {
+    function parseVariableDeclaration(options) {
         var init = null, id, node = new Node(), params = [];
 
-        id = parsePattern(params);
+        id = parsePattern(params, 'var');
 
         // ECMA-262 12.2.1
         if (strict && isRestrictedWord(id.name)) {
@@ -4304,18 +4326,18 @@
         if (match('=')) {
             lex();
             init = isolateCoverGrammar(parseAssignmentExpression);
-        } else if (id.type !== Syntax.Identifier) {
+        } else if (id.type !== Syntax.Identifier && !options.inFor) {
             expect('=');
         }
 
         return node.finishVariableDeclarator(id, init);
     }
 
-    function parseVariableDeclarationList() {
+    function parseVariableDeclarationList(options) {
         var list = [];
 
         do {
-            list.push(parseVariableDeclaration());
+            list.push(parseVariableDeclaration({ inFor: options.inFor }));
             if (!match(',')) {
                 break;
             }
@@ -4330,7 +4352,7 @@
 
         expectKeyword('var');
 
-        declarations = parseVariableDeclarationList();
+        declarations = parseVariableDeclarationList({ inFor: false });
 
         consumeSemicolon();
 
@@ -4342,7 +4364,7 @@
     function parseLexicalBinding(kind, options) {
         var init = null, id, node = new Node(), params = [];
 
-        id = parsePattern(params);
+        id = parsePattern(params, kind);
 
         // ECMA-262 12.2.1
         if (strict && id.type === Syntax.Identifier && isRestrictedWord(id.name)) {
@@ -4522,21 +4544,24 @@
                 lex();
 
                 state.allowIn = false;
-                init = init.finishVariableDeclaration(parseVariableDeclarationList());
+                declarations = parseVariableDeclarationList({ inFor: true });
                 state.allowIn = previousAllowIn;
 
-                if (init.declarations.length === 1 && matchKeyword('in')) {
+                if (declarations.length === 1 && matchKeyword('in')) {
+                    init = init.finishVariableDeclaration(declarations);
                     lex();
                     left = init;
                     right = parseExpression();
                     init = null;
-                } else if (init.declarations.length === 1 && init.declarations[0].init === null && matchContextualKeyword('of')) {
+                } else if (declarations.length === 1 && declarations[0].init === null && matchContextualKeyword('of')) {
+                    init = init.finishVariableDeclaration(declarations);
                     lex();
                     left = init;
                     right = parseAssignmentExpression();
                     init = null;
                     forIn = false;
                 } else {
+                    init = init.finishVariableDeclaration(declarations);
                     expect(';');
                 }
             } else if (matchKeyword('const') || matchKeyword('let')) {
@@ -5722,7 +5747,7 @@
         node = new Node();
 
         body = parseScriptBody();
-        return node.finishProgram(body);
+        return node.finishProgram(body, state.sourceType);
     }
 
     function filterTokenLocation() {
@@ -5867,9 +5892,9 @@
             inIteration: false,
             inSwitch: false,
             lastCommentStart: -1,
-            curlyStack: []
+            curlyStack: [],
+            sourceType: 'script'
         };
-        sourceType = 'script';
         strict = false;
 
         extra = {};
@@ -5900,7 +5925,7 @@
             }
             if (options.sourceType === 'module') {
                 // very restrictive condition for now
-                sourceType = options.sourceType;
+                state.sourceType = options.sourceType;
                 strict = true;
             }
         }
@@ -6538,74 +6563,82 @@
         return node.finishIdentifier(token.value);
     }
 
-    function oj_parseArrayInitialiserOrMessageExpression() {
+    function oj_parseArrayInitializerOrMessageExpression() {
         var elements = [],
-            isMessageExpression = true,
-            selectorName = "",
-            messageSelectors, node = new Node();
+            node = new Node(), restSpread,
+            ojMightBeMessageExpression = true, ojMaybeElement, ojReceiver, ojSelectorName, ojMessageSelectors, ojMessageSelector,
 
         expect('[');
 
         while (!match(']')) {
             if (match(',')) {
-                isMessageExpression = false;
                 lex();
                 elements.push(null);
 
-            } else if (isMessageExpression && (elements.length == 1)) {
-                if (!messageSelectors) messageSelectors = [ ];
-                var messageSelector = oj_parseMessageSelector();
-                messageSelectors.push(messageSelector);
+            } else if (match('...')) {
+                restSpread = new Node();
+                lex();
+                restSpread.finishSpreadElement(inheritCoverGrammar(parseAssignmentExpression));
 
-                selectorName += messageSelector.name.value;
-                if (messageSelector.argument || messageSelector.arguments) {
-                    selectorName += ":";
+                if (!match(']')) {
+                    isAssignmentTarget = isBindingElement = false;
+                    expect(',');
+                }
+                elements.push(restSpread);
+
+            } else if (ojMightBeMessageExpression) {
+                if (matchKeyword("super")) {
+                    ojMaybeElement = oj_parseMessageReceiver();
+                } else {
+                    ojMaybeElement = inheritCoverGrammar(parseAssignmentExpression);
+                    ojMightBeMessageExpression = !(match(",") || match("]"));
+                }
+
+                // At this point, ojMightBeMessageExpression is really "isMessageExpression"
+                if (ojMightBeMessageExpression) {
+                    ojReceiver = new Node();
+                    ojReceiver.oj_finishMessageReceiver(ojMaybeElement);
+                    if (ojReceiver.value.loc) ojReceiver.loc = ojReceiver.value.loc;
+
+                    ojMessageSelectors = [ ];
+                    ojSelectorName = "";
+
+                    while (!match(']')) {
+                        ojMessageSelector = oj_parseMessageSelector();
+                        ojMessageSelectors.push(ojMessageSelector);
+
+                        ojSelectorName += ojMessageSelector.name.value;
+                        if (ojMessageSelector.argument || ojMessageSelector.arguments) {
+                            ojSelectorName += ":";
+                        }
+                    }
+
+                    break;
+
+                } else {
+                    elements.push(maybeElement);
+
+                    if (!match(']')) {
+                        expect(',');
+                    }                
                 }
 
             } else {
-                var token = lookahead;
+                elements.push(inheritCoverGrammar(parseAssignmentExpression));
 
-                if (token.type == Token.Keyword && token.value == "super") {
-                    elements.push(oj_parseMessageReceiver());
-                } else {
-                    elements.push(parseAssignmentExpression());
-                }
-
-                if (!isMessageExpression && !match(']')) {
+                if (!match(']')) {
                     expect(',');
-                }
+                }                
             }
         }
 
-        expect(']');
+        lex();
 
-        if (isMessageExpression && messageSelectors) {
-            var receiver = new Node();
-            receiver.oj_finishMessageReceiver(elements[0]);
-            if (receiver.value.loc) receiver.loc = receiver.value.loc;
-            return node.oj_finishMessageExpression(receiver, selectorName, messageSelectors);
-
-        } else {
+        if (ojMessageSelectors) {
+            return node.oj_finishMessageExpression(ojReceiver, ojSelectorName, ojMessageSelectors);
+        } else {            
             return node.finishArrayExpression(elements);
         }
-    }
-
-    function oj_parseMessageSelector() {
-        var name, args = [ ], node = new Node();
-
-        name = oj_parseMethodNameSegment();
-
-        if (!match(']')) {
-            expect(':');
-            args.push(parseAssignmentExpression());
-        }
-
-        while (match(',')) {
-            expect(',');
-            args.push(parseAssignmentExpression());
-        }
-
-        return node.oj_finishMessageSelector(name, arg, args);
     }
 
     function oj_parseMessageSelector() {
@@ -6713,13 +6746,27 @@
         return node.oj_finishTypeAnnotation(oj_parseType());
     }
 
-    function oj_parseVariableIdentifierWithOptionalTypeAnnotation() {
-        var token, annotation = null, node = new Node();
+    function oj_parseVariableIdentifierWithOptionalTypeAnnotation(kind) {
+        var token, node = new Node();
 
         token = lex();
 
-        if (token.type !== Token.Identifier) {
-            throwUnexpected(token);
+        if (token.type === Token.Keyword && token.value === 'yield') {
+            if (strict) {
+                tolerateUnexpectedToken(token, Messages.StrictReservedWord);
+            } if (!state.allowYield) {
+                throwUnexpectedToken(token);
+            }
+        } else if (token.type !== Token.Identifier) {
+            if (strict && token.type === Token.Keyword && isStrictModeReservedWord(token.value)) {
+                tolerateUnexpectedToken(token, Messages.StrictReservedWord);
+            } else {
+                if (strict || token.value !== 'let' || kind !== 'var') {
+                    throwUnexpectedToken(token);
+                }
+            }
+        } else if (state.sourceType === 'module' && token.type === Token.Identifier && token.value === 'await') {
+            tolerateUnexpectedToken(token);
         }
 
         if (match(":")) {
@@ -6765,7 +6812,7 @@
 //!oj: end changes
 
     // Sync with *.json manifests.
-    exports.version = '2.5.0';
+    exports.version = '2.6.0';
 
     exports.tokenize = tokenize;
 

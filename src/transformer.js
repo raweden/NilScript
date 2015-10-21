@@ -202,7 +202,10 @@ function transform(ast, model, options)
                     receiverNode = Tree.makeClassPiece(classSymbol).result;
                     replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, false);
                 }
-            
+
+            } else if (receiverName == "self") {
+                replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, false);
+
             } else if (inClass && currentClass.isIvar(receiverName)) {
                 methodUsesLoneExpression = true;
 
@@ -326,9 +329,9 @@ function transform(ast, model, options)
 
     function replaceMethodDefinition(node)
     {
+        var methodSymbol = getSymbolForSelectorName(node.selectorName);
         var piece = Tree.makeMethodDeclarationPiece(node.selectorType == "+", methodSymbol);
 
-        var methodSymbol = getSymbolForSelectorName(node.selectorName);
         var params = piece.params;
         var variableName;
 
@@ -340,24 +343,41 @@ function transform(ast, model, options)
             }
         }
 
-        if (methodUsesSelfVar || methodUsesTemporaryVar || methodUsesLoneExpression) {
-            var varParts = [ ];
+        if (methodUsesSelfVar || methodUsesTemporaryVar) { //  || methodUsesLoneExpression) {
+            var declarationPiece = Tree.makeVariableDeclarationPiece();
 
-            if (methodUsesSelfVar) varParts.push("self = this");
-            if (methodUsesTemporaryVar) varParts.push(OJTemporaryReturnVariable);
-
-            if (methodUsesLoneExpression) {
-                string += "/* jshint expr: true */";
+            if (methodUsesSelfVar) {
+                declarationPiece.declarations.push(Tree.wrapInVariableDeclarator(
+                    Tree.getIdentifier("self"),
+                    Tree.getThisExpression()
+                ))
             }
 
-            if (varParts.length) {
-                string += "var " + varParts.join(",") + ";";
+            if (methodUsesTemporaryVar) {
+                declarationPiece.declarations.push(Tree.wrapInVariableDeclarator(
+                    Tree.getIdentifier(OJTemporaryReturnVariable),
+                    null
+                ))
             }
+            // var varParts = [ ];
+
+            // if (methodUsesSelfVar) varParts.push("self = this");
+            // if (methodUsesTemporaryVar) varParts.push();
+
+            // if (methodUsesLoneExpression) {
+            //     string += "/* jshint expr: true */";
+            // }
+
+            // if (varParts.length) {
+            //     string += "var " + varParts.join(",") + ";";
+            // }
+
+            piece.body.push(declarationPiece.result);
         }
 
         Array.prototype.push.apply(piece.body, node.body.body);
 
-        return piece.result;
+        return Tree.wrapInExpressionStatement(piece.result);
     }
 
 
@@ -366,7 +386,7 @@ function transform(ast, model, options)
         var name = node.name;
         var replacement = node;
 
-        if (name.indexOf("$oj") == 0) {
+        if (node.loc && (name.indexOf("$oj") == 0)) {
             if (name[3] == "$" || name[3] == "_") {
                 Utils.throwError(OJError.DollarOJIsReserved, "Identifiers may not start with \"$oj_\" or \"$oj$\"", node);
             }

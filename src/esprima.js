@@ -6566,7 +6566,7 @@
     function oj_parseArrayInitializerOrMessageExpression() {
         var elements = [],
             node = new Node(), restSpread,
-            ojMightBeMessageExpression = true, ojMaybeElement, ojReceiver, ojSelectorName, ojMessageSelectors, ojMessageSelector,
+            ojMightBeMessageExpression = true, ojMaybeElement, ojReceiver, ojSelectorName, ojMessageSelectors, ojMessageSelector;
 
         expect('[');
 
@@ -6616,7 +6616,7 @@
                     break;
 
                 } else {
-                    elements.push(maybeElement);
+                    elements.push(ojMaybeElement);
 
                     if (!match(']')) {
                         expect(',');
@@ -6669,7 +6669,7 @@
 
         expectKeyword("@const");
 
-        declarations = parseVariableDeclarationList("@const");
+        declarations = parseVariableDeclarationList({ inFor: false });
 
         consumeSemicolon();
 
@@ -6788,7 +6788,7 @@
             lex();
 
             state.allowIn = false;
-            left = left.finishVariableDeclaration(parseVariableDeclarationList());
+            left = left.finishVariableDeclaration(parseVariableDeclarationList({ inFor: false }));
             state.allowIn = true;
 
         } else {

@@ -229,6 +229,8 @@ function hint(request, callback)
 
     var response = { filename: filename, errors: [ ], mtime: request.mtime };
 
+    console.log(config, globals);
+
     if (!JSHINT(content, config, globals)) {
         var inErrors  = JSHINT.errors;
         var outErrors = [ ];

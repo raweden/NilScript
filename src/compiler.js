@@ -27,6 +27,7 @@ var util        = require("util");
 
 function errorForEsprimaError(inError)
 {
+    throw inError;
     var line = inError.lineNumber;
 
     var message = inError.description ? inError.description : ("" + inError);
@@ -277,12 +278,19 @@ Compiler.prototype.compile = function(callback)
 
             time("Transform - gen", function() {
                 result.code = escodegen.generate(ast);
-
             });
 
-            // console.log(util.inspect(esvalid.errors(ast), { depth: null }));
+            if (this._inputModifierOptions.prepend) {
+                result.code = this._inputModifierOptions.prepend.join("\n") + result.code;
+            }
 
-            // result.code = escodegen.generate(ast);
+            if (this._inputModifierOptions.append) {
+                result.code = result.code + this._inputModifierOptions.append.join("\n");
+            }
+
+            time("Archive", function() {
+                result.state = model.saveState();
+            });
         }
 
         if (options["dump-ast"]) {
@@ -350,7 +358,7 @@ Compiler.prototype.compile = function(callback)
         }
 
     } catch (e) {
-        if (e.name.indexOf("OJ") !== 0) {
+        if (e.name && e.name.indexOf("OJ") !== 0) {
             console.error("Internal oj error!")
             console.error("------------------------------------------------------------")
             console.error(e);

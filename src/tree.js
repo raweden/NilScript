@@ -31,124 +31,6 @@ var OJSuperVariable           = "$oj_super";
 var Tree = { };
 
 
-function getNullLiteral()
-{
-    return { "type": "Literal", "value": null, "raw": "null" };
-}
-Tree.getNullLiteral = getNullLiteral;
-
-
-function getZeroLiteral()
-{
-    return { "type": "Literal", "value": 0, "raw": "0" };
-}
-Tree.getZeroLiteral = getZeroLiteral;
-
-
-function getFalseLiteral()
-{
-    return { "type": "Literal", "value": false, "raw": "false" };
-}
-Tree.getFalseLiteral = getFalseLiteral;
-
-
-function getThisExpression()
-{
-    return { "type": "ThisExpression" };
-}
-Tree.getThisExpression = getThisExpression;
-
-
-function getNumericLiteral(value)
-{
-    if (value < 0) {
-        return {
-            "type": "UnaryExpression",
-            "operator": "-",
-            "argument": { "type": "Literal", "value": -value, "raw": ('"' + (-value) + '"') },
-            "prefix": true
-        };
-
-    } else {
-        return { "type": "Literal", "value": value, "raw": ('"' + value + '"') };
-    }
-}
-
-
-function getIdentifier(name)
-{
-    return { "type": "Identifier", "name": name };
-}
-Tree.getIdentifier = getIdentifier;
-
-
-function wrapInNew(node)
-{
-    return {
-        "type": "NewExpression",
-        "callee": node,
-        "arguments": []
-    };
-}
-Tree.wrapInNew = wrapInNew;
-
-
-function wrapInVariableDeclarator(id, init)
-{
-    return {
-        "type": "VariableDeclarator",
-        "id": id,
-        "init": init
-    };
-}
-Tree.wrapInVariableDeclarator = wrapInVariableDeclarator;
-
-
-function wrapInExpressionStatement(node)
-{
-    return {
-        "type": "ExpressionStatement",
-        "expression": node
-    };
-}
-Tree.wrapInExpressionStatement = wrapInExpressionStatement;
-
-
-function wrapInReturn(node)
-{
-    return {
-        "type": "ReturnStatement",
-        "argument": node
-    }
-}
-Tree.wrapInReturn = wrapInReturn;
-
-
-// { NAME: 1 }
-//
-function makeSelectorPiece(name)
-{
-    var keyPiece;
-
-    var result = {
-        "type": "ObjectExpression",
-        "properties": [{
-            "type": "Property",
-            "key":   (keyPiece = { "type": "Identifier", "name": name }),
-            "value": { "type": "Literal", "value": 1, "raw": "1" },
-            "kind": "init"
-        }]
-    };
-
-    if (Utils.isJScriptReservedWord(name)) {
-        keyPiece.raw = '"' + name + '"';
-    }
-
-    return { result: result };
-}
-Tree.makeSelectorPiece = makeSelectorPiece;
-
-
 // var NAME = $oj_oj._registerClass(null, null, function($oj_s, $oj_m) { })
 //
 function makeRegisterClassPiece(name)
@@ -289,45 +171,6 @@ function makeConstructorCallSuperPiece(symbol)
 Tree.makeConstructorCallSuperPiece = makeConstructorCallSuperPiece;
 
 
-// this.SYMBOL = false|0|null
-//
-function makeConstructorInitIvarPiece(symbol, value)
-{
-    var right;
-
-    if (value === 0) {
-        right = getZeroLiteral();
-    } else if (value === false) {
-        right = getFalseLiteral();
-    } else {
-        right = getNullLiteral();
-    }
-
-    return { result: {
-        "type": "AssignmentExpression",
-        "operator": "=",
-        "left": {
-            "type": "MemberExpression",
-            "computed": false,
-            "object":   { "type": "ThisExpression" },
-            "property": { "type": "Identifier", "name": symbol }
-        },
-        "right": right
-    }};
-}
-Tree.makeConstructorInitIvarPiece = makeConstructorInitIvarPiece;
-
-
-// return NAME;
-//
-function makeReturnIdentifierPiece(name)
-{
-    return { result: {
-        "type": "ReturnStatement",
-        "argument": { "type": "Identifier", "name": name }
-    }};
-}
-Tree.makeReturnIdentifierPiece = makeReturnIdentifierPiece;
 
 
 // $oj_m.METHOD_SYMBOL = function(arg) { this.IVAR_SYMBOL = arg; }
@@ -433,25 +276,6 @@ function makeMethodDeclarationPiece(isClassMethod, methodSymbol)
     }
 }
 Tree.makeMethodDeclarationPiece = makeMethodDeclarationPiece;
-
-
-// $oj_oj._cls.CLASS_SYMBOL
-//
-function makeClassPiece(classSymbol)
-{
-    return { result: {
-        "type": "MemberExpression",
-        "computed": false,
-        "object": {
-            "type": "MemberExpression",
-            "computed": false,
-            "object":   { "type": "Identifier", "name": OJGlobalVariable },
-            "property": { "type": "Identifier", "name": "_cls"           }
-        },
-        "property": { "type": "Identifier", "name": classSymbol }
-    }};
-}
-Tree.makeClassPiece = makeClassPiece;
 
 
 // CLASS_NAME.$oj_super.METHOD_SYMBOL.call(this)
@@ -672,35 +496,6 @@ function makeIvarPiece(usesSelfVariable, ivarSymbol)
     }
 }
 Tree.makeIvarPiece = makeIvarPiece;
-
-
-function makeVariableDeclarationPiece()
-{
-    var declarations;
-
-    var result = {
-        "type": "VariableDeclaration",
-        "declarations": (declarations = [ ]),
-        "kind": "var"
-    };
-
-    return {
-        result: result,
-        declarations: declarations
-    }
-}
-Tree.makeVariableDeclarationPiece = makeVariableDeclarationPiece;
-
-
-function makeNumericVariableDeclaratorPiece(name, value)
-{
-    return { result: {
-        "type": "VariableDeclarator",
-        "id":   { "type": "Identifier", "name": name },
-        "init": getNumericLiteral(value)
-    } };
-}
-Tree.makeNumericVariableDeclaratorPiece = makeNumericVariableDeclaratorPiece;
 
 
 

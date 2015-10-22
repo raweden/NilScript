@@ -20,8 +20,103 @@ var OJClassPrefix             = "$oj_c_";
 var OJMethodPrefix            = "$oj_f_";
 var OJIvarPrefix              = "$oj_i_";
 
+var OJGlobalVariable          = "$oj_oj";
+var OJClassMethodsVariable    = "$oj_s";
+var OJInstanceMethodsVariable = "$oj_m";
+var OJTemporaryReturnVariable = "$oj_r";
+var OJSuperVariable           = "$oj_super";
+
+
 // Goes away
 var OJTemporaryReturnVariable = "$oj_r";
+
+
+/* Tree helpers.  These build nodes */
+
+function NullLiteral()    { return { type: "Literal", value: null,  raw: "null"  }; }
+function ZeroLiteral()    { return { type: "Literal", value: 0,     raw: "0"     }; }
+function FalseLiteral()   { return { type: "Literal", value: false, raw: "false" }; }
+function ThisExpression() { return { type: "ThisExpression" }; }
+
+function Identifier(n)       { return { type: "Identifier",      name:     n }; }
+function ReturnStatement(a)  { return { type: "ReturnStatement", argument: a }; }
+function NewExpression(c, a) { return { type: "NewExpression", "callee": c, "arguments": a || [] }; }
+
+
+
+function VariableDeclaration(d)
+{
+    return { "type": "VariableDeclaration", "declarations": d || [ ], "kind": "var" };
+}
+
+
+function ConditionalExpression(t, c, a)
+{
+    return { "type": "ConditionalExpression", "test": t, "consequent": c, "alternate": a };
+}
+
+function VariableDeclarator(id, init)
+{
+    return { "type": "VariableDeclarator", "id": id, "init": init };
+}
+
+function MemberExpression(object, property, computed)
+{
+    return { "type": "MemberExpression", "computed": !!computed, "object": object, "property": property };
+}
+
+function AssignmentExpression(left, right)
+{
+    return { "type": "AssignmentExpression", "operator": "=", "left": left, "right": right };
+}
+
+function ExpressionStatement(node)
+{
+    return { "type": "ExpressionStatement", "expression": node };
+}
+
+
+function makeClassPiece(classSymbol)
+{
+    return MemberExpression(
+        MemberExpression( Identifier(OJGlobalVariable), Identifier("_cls") ),
+        Identifier(classSymbol)
+    );
+}
+
+
+// { NAME: 1 }
+//
+function makeSelectorPiece(name)
+{
+    var identifier = Identifier(name);
+    var one = { type: "Literal", value: 1, raw: "1" };
+
+    if (Utils.isJScriptReservedWord(name)) {
+        identifier.raw = '"' + name + '"';
+    }
+
+    return {
+        type: "ObjectExpression",
+        properties: [{ type: "Property", key: identifier, value: one, kind: "init" }]
+    };
+}
+
+
+function makeNumericPiece(value)
+{
+    if (value < 0) {
+        return {
+            type: "UnaryExpression",
+            operator: "-",
+            argument: { "type": "Literal", "value": -value, "raw": ('"' + (-value) + '"') },
+            prefix: true
+        };
+
+    } else {
+        return { type: "Literal", value: value, raw: ('"' + value + '"') };
+    }
+}
 
 
 function unshiftContents(array, array2)
@@ -94,6 +189,7 @@ function transform(ast, model, options)
         }
     }());
 
+
     function getSymbolForClassName(className) {
         if (!className) return;
 
@@ -140,9 +236,10 @@ function transform(ast, model, options)
         var selectorName = node.selectorName;
         var methodSymbol = getSymbolForSelectorName(selectorName);
 
-        var messageSelectors = node.messageSelectors;
-        var receiverNode     = node.receiver.value;
-        var argumentNodes    = [ ];
+        var messageSelectors  = node.messageSelectors;
+        var receiverContainer = node.receiver;
+        var receiverNode      = receiverContainer.value;
+        var argumentNodes     = [ ];
 
         var classSymbol;
         var replacementPiece;
@@ -161,12 +258,12 @@ function transform(ast, model, options)
         if (!inMethodNode) {
             if ((receiverNode.type == Syntax.Identifier) && model.classes[receiverNode.name]) {
                 classSymbol = getSymbolForClassName(receiverNode.name);
-                receiverNode = Tree.makeClassPiece(classSymbol).result;
+                receiverNode = makeClassPiece(classSymbol);
             }
 
             replacementPiece = Tree.makeMsgSendPiece();
             replacementPiece.arguments.push(receiverNode);
-            replacementPiece.arguments.push(Tree.makeSelectorPiece(methodSymbol).result);
+            replacementPiece.arguments.push(makeSelectorPiece(methodSymbol));
 
         // Optimized case for Syntax.ThisExpression
         } else if (receiverNode.type == Syntax.ThisExpression) {
@@ -196,14 +293,14 @@ function transform(ast, model, options)
                 classSymbol = getSymbolForClassName(receiverName);
 
                 if (selectorName == "alloc") {
-                    replacementPiece = Tree.makeClassPiece(classSymbol);
-                    return Tree.wrapInNew(replacementPiece.result);
+                    return NewExpression( makeClassPiece(classSymbol) );
                 } else {
-                    receiverNode = Tree.makeClassPiece(classSymbol).result;
+                    receiverNode = makeClassPiece(classSymbol);
                     replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, false);
                 }
 
             } else if (receiverName == "self") {
+                receiverNode = replaceIdentifier(receiverNode, receiverContainer);
                 replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, false);
 
             } else if (inClass && currentClass.isIvar(receiverName)) {
@@ -214,6 +311,7 @@ function transform(ast, model, options)
 
             } else {
                 methodUsesLoneExpression = true;
+                receiverNode = replaceIdentifier(receiverNode, receiverContainer);
                 replacementPiece = Tree.makeCallToReceiverPiece(receiverNode, methodSymbol, true);
             }
 
@@ -242,38 +340,38 @@ function transform(ast, model, options)
 
         var toAppend = [ ];
 
-        piece.arguments[0] = Tree.makeSelectorPiece(getSymbolForClassName(className)).result;
+        piece.arguments[0] = makeSelectorPiece(getSymbolForClassName(className));
+
+        function pushInitChain(ivars, valueNode) {
+            if (!ivars.length) return;
+
+            var currentRight = valueNode;
+            for (var i = ivars.length - 1; i >= 0; i--) {
+                var symbol = getSymbolForClassNameAndIvarName(className, ivars[i]);
+
+                currentRight = AssignmentExpression(
+                    MemberExpression(ThisExpression(), Identifier(symbol)),
+                    currentRight
+                );
+            }
+
+            toAppend.push( ExpressionStatement(currentRight) );
+        }
 
         if (superName) {
             var superSymbol = getSymbolForClassName(superName);
-            piece.arguments[1] = Tree.makeSelectorPiece(superSymbol).result;
-            toAppend.push(Tree.wrapInExpressionStatement( Tree.makeConstructorCallSuperPiece(superSymbol).result ) );
+            piece.arguments[1] = makeSelectorPiece(superSymbol);
+            toAppend.push( ExpressionStatement( Tree.makeConstructorCallSuperPiece(superSymbol).result ) );
         } else {
-            piece.arguments[1] = Tree.getNullLiteral();
+            piece.arguments[1] = NullLiteral();
         }
 
         var ivarMap = currentClass.getTypeToSortedIvarNameMap();
+        pushInitChain(ivarMap.object,  NullLiteral()  );
+        pushInitChain(ivarMap.number,  ZeroLiteral()  );
+        pushInitChain(ivarMap.boolean, FalseLiteral() );
 
-        _.each(ivarMap.object, function(ivar) {
-            var symbol = getSymbolForClassNameAndIvarName(className, ivar);
-            var node   = Tree.makeConstructorInitIvarPiece(symbol, null).result;
 
-            toAppend.push( Tree.wrapInExpressionStatement(node) );
-        });
-
-        _.each(ivarMap.number, function(ivar) {
-            var symbol = getSymbolForClassNameAndIvarName(className, ivar);
-            var node   = Tree.makeConstructorInitIvarPiece(symbol, 0).result;
-
-            toAppend.push( Tree.wrapInExpressionStatement(node) );
-        });
-
-        _.each(ivarMap.boolean, function(ivar) {
-            var symbol = getSymbolForClassNameAndIvarName(className, ivar);
-            var node   = Tree.makeConstructorInitIvarPiece(symbol, false).result;
-            
-            toAppend.push( Tree.wrapInExpressionStatement(node) );
-        });
 
         var constructorPiece = Tree.makeConstructorPiece(className);
 
@@ -288,10 +386,11 @@ function transform(ast, model, options)
         // 
         pushContents( piece.body, _.flatten(inNode.body.body) );
 
-        piece.body.push( Tree.wrapInReturn(Tree.getIdentifier(className)) );
+        piece.body.push( ReturnStatement( Identifier(className) ) );
 
         return replacement;
     }
+
 
     function replaceAtPropertyDirective(node)
     {
@@ -313,14 +412,14 @@ function transform(ast, model, options)
             var setterSymbol = getSymbolForSelectorName(property.setter);
             var node = Tree.makePropertySetterPiece(setterSymbol, ivarSymbol).result;
 
-            result.push( Tree.wrapInExpressionStatement(node) );
+            result.push( ExpressionStatement(node) );
         }
 
         if (makeGetter) {
             var getterSymbol = getSymbolForSelectorName(property.getter);
             var node = Tree.makePropertyGetterPiece(getterSymbol, ivarSymbol).result;
 
-            result.push( Tree.wrapInExpressionStatement(node) );
+            result.push( ExpressionStatement(node) );
         }
 
         return result;
@@ -339,45 +438,38 @@ function transform(ast, model, options)
             variableName = node.methodSelectors[i].variableName;
 
             if (variableName) {
-                params.push( Tree.getIdentifier(variableName.name) );
+                params.push( Identifier(variableName.name) );
             }
         }
 
         if (methodUsesSelfVar || methodUsesTemporaryVar) { //  || methodUsesLoneExpression) {
-            var declarationPiece = Tree.makeVariableDeclarationPiece();
+            var declarations = [ ];
 
             if (methodUsesSelfVar) {
-                declarationPiece.declarations.push(Tree.wrapInVariableDeclarator(
-                    Tree.getIdentifier("self"),
-                    Tree.getThisExpression()
+                declarations.push(VariableDeclarator(
+                    Identifier("self"),
+                    ThisExpression()
                 ))
             }
 
             if (methodUsesTemporaryVar) {
-                declarationPiece.declarations.push(Tree.wrapInVariableDeclarator(
-                    Tree.getIdentifier(OJTemporaryReturnVariable),
+                declarations.push(VariableDeclarator(
+                    Identifier(OJTemporaryReturnVariable),
                     null
                 ))
             }
-            // var varParts = [ ];
 
-            // if (methodUsesSelfVar) varParts.push("self = this");
-            // if (methodUsesTemporaryVar) varParts.push();
-
+            //!i: FIX?
             // if (methodUsesLoneExpression) {
             //     string += "/* jshint expr: true */";
             // }
 
-            // if (varParts.length) {
-            //     string += "var " + varParts.join(",") + ";";
-            // }
-
-            piece.body.push(declarationPiece.result);
+            piece.body.push(VariableDeclaration(declarations));
         }
 
         Array.prototype.push.apply(piece.body, node.body.body);
 
-        return Tree.wrapInExpressionStatement(piece.result);
+        return ExpressionStatement(piece.result);
     }
 
 
@@ -427,9 +519,7 @@ function transform(ast, model, options)
             var result = inlines[name];
             if (result !== undefined) {
                 if (inlines.hasOwnProperty(name)) {
-                    throw "Fix this"
-//                    modifier.select(node).replace("" + result);
-                    return;
+                    return Identifier(result);
                 }
             }
         }
@@ -455,7 +545,7 @@ function transform(ast, model, options)
             warnings.push(Utils.makeError(OJWarning.UnknownSelector, "Use of unknown selector '" + node.selectorName + "'", node));
         }
 
-        return Tree.makeSelectorPiece(symbol).result;
+        return makeSelectorPiece(symbol);
     }
 
 
@@ -465,18 +555,18 @@ function transform(ast, model, options)
         var length = inDeclarationArray ? inDeclarationArray.length : 0;
 
         if (length) {
-            var piece = Tree.makeVariableDeclarationPiece();
-
-            var outDeclarationArray = piece.declarations;
-            var inDeclaration, outDeclaration, i;
+            var outDeclarationArray = [ ];
+            var inDeclaration, i;
 
             for (i = 0; i < length; i++) {
-                inDeclaration  = inDeclarationArray[i];
-                outDeclaration = Tree.makeNumericVariableDeclaratorPiece(inDeclaration.id.name, inDeclaration.enumValue).result;
-                outDeclarationArray.push(outDeclaration);
+                inDeclaration = inDeclarationArray[i];
+                outDeclarationArray.push( VariableDeclarator(
+                    inDeclaration.id,
+                    makeNumericPiece(inDeclaration.enumValue)
+                ));
             }
 
-            return piece.result;
+            return VariableDeclaration(outDeclarationArray);
 
         } else {
             return Traverser.RemoveNode;
@@ -486,21 +576,16 @@ function transform(ast, model, options)
 
     function replaceAtEachStatement(node)
     {
-        return Traverser.RemoveNode;
-
         var scope  = node.oj_scope;
-        var i      = scope.makeInternalVariable();
-        var length = scope.makeInternalVariable();
-
-        var object;
-        var initLeft = "var ";
-        var initRight = "";
-        var expr = false;
-
+        var iVariable      = scope.makeInternalVariable();
+        var lengthVariable = scope.makeInternalVariable();
+        var arrayVariable, objectVariable;
+        var declaration;
+    
         // The left side is "var foo", "let foo", etc
         if (node.left.type == Syntax.VariableDeclaration) {
-            object = node.left.declarations[0].id.name;
-            initLeft  += object + ", ";
+            objectVariable = node.left.declarations[0].id.name;
+            declaration = node.left;
 
         // The left side is just an identifier
         } else if (node.left.type == Syntax.Identifier) {
@@ -508,32 +593,62 @@ function transform(ast, model, options)
                 Utils.throwError(OJError.CannotUseIvarHere, "Cannot use ivar \"" + node.left.name + "\" on left-hand side of @each", node);
             }
 
-            object = node.left.name;
+            objectVariable = node.left.name;
+            declaration = VariableDeclaration();
         }
 
         // The right side is a simple identifier
         if (node.right.type == Syntax.Identifier && currentClass && !currentClass.isIvar(node.right.name)) {
-            array = node.right.name;
+            arrayVariable = node.right.name;
 
         // The right side is an expression, we need an additional variable
         } else {
-            array = scope.makeInternalVariable();
-            initLeft  += array + " = (";
-            initRight = initRight + "), ";
-            expr = true;
+            arrayVariable = scope.makeInternalVariable();
+
+            declaration.declarations.push(VariableDeclarator(
+                Identifier(arrayVariable),
+                node.right
+            ));
         }
 
-        initRight += i + " = 0, " + length + " = " + array + ".length";
+        declaration.declarations.push(
+            VariableDeclarator( Identifier(iVariable),      ZeroLiteral() ),
+            VariableDeclarator( Identifier(lengthVariable), ConditionalExpression(
+                Identifier(arrayVariable),
+                MemberExpression(Identifier(arrayVariable), Identifier("length") ),
+                ZeroLiteral()
+            ) )
+        );
 
-        var test      = "(" + i + " < " + length + ") && (" + object + " = " + array + "[" + i + "])";
-        var increment = i + "++";
-
-        // if (expr) {
-        //     modifier.from(node).to(node.right).replace("for (" + initLeft);
-        //     modifier.from(node.right).to(node.body).replace(initRight + "; " + test + "; " + increment + ") ");
-        // } else {
-        //     modifier.from(node).to(node.body).replace("for (" + initLeft + initRight + "; " + test + "; " + increment + ") ");
-        // }
+        return {
+            type: "ForStatement",
+            init: declaration,
+            test: {
+                type: "LogicalExpression",
+                operator: "&&",
+                left: {
+                    "type": "BinaryExpression",
+                    "operator": "<",
+                    "left":  Identifier(iVariable),
+                    "right": Identifier(lengthVariable)
+                },
+                right: AssignmentExpression(
+                    Identifier(objectVariable),
+                    MemberExpression(
+                        Identifier(arrayVariable),
+                        Identifier(iVariable),
+                        true
+                    )
+                )
+            },
+            update: {
+                type: "UpdateExpression",
+                operator: "++",
+                prefix: false,
+                argument: Identifier(iVariable)
+            },
+            body: node.body
+        }
     }
 
 
@@ -645,7 +760,9 @@ function transform(ast, model, options)
             replacement = replaceAtPropertyDirective(node);
 
         } else if (type === Syntax.Identifier) {
-            replacement = replaceIdentifier(node, parent);
+            if (parent.type != Syntax.OJMessageReceiver) {
+                replacement = replaceIdentifier(node, parent);
+            }
 
         } else if (type === Syntax.OJAtSelectorDirective) {
             replacement = replaceAtSelectorDirective(node);

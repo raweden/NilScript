@@ -21,7 +21,6 @@ var OJModel     = require("./model").OJModel;
 var _           = require("lodash");
 var fs          = require("fs");
 var escodegen   = require("escodegen");
-var esvalid     = require("esvalid");
 var util        = require("util");
 
 

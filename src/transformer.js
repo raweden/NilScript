@@ -4,30 +4,23 @@
     MIT license, http://www.opensource.org/licenses/mit-license.php
 */
 
-var _          = require("lodash");
-var esprima    = require("./esprima");
-var Syntax     = esprima.Syntax;
+"use strict";
 
-var Traverser  = require("./traverser");
-var Utils      = require("./utils");
+const _      = require("lodash");
+const Syntax = require("./esprima").Syntax;
 
-var OJModel    = require("./model").OJModel;
-var OJError    = require("./errors").OJError;
-var OJWarning  = require("./errors").OJWarning;
+const Traverser  = require("./traverser");
+const Utils      = require("./utils");
 
-var OJClassPrefix             = "$oj_c_";
-var OJMethodPrefix            = "$oj_f_";
-var OJIvarPrefix              = "$oj_i_";
+const OJModel    = require("./model").OJModel;
+const OJError    = require("./errors").OJError;
+const OJWarning  = require("./errors").OJWarning;
 
-var OJGlobalVariable          = "$oj_oj";
-var OJClassMethodsVariable    = "$oj_s";
-var OJInstanceMethodsVariable = "$oj_m";
-var OJTemporaryReturnVariable = "$oj_r";
-var OJSuperVariable           = "$oj_super";
-
-
-// Goes away
-var OJTemporaryReturnVariable = "$oj_r";
+const OJGlobalVariable          = "$oj_oj";
+const OJClassMethodsVariable    = "$oj_s";
+const OJInstanceMethodsVariable = "$oj_m";
+const OJSuperVariable           = "$oj_super";
+const OJTemporaryVariablePrefix = "$oj_t_";
 
 
 /* Tree helpers.  These build nodes */
@@ -40,13 +33,14 @@ function Identifier(n)              { return { type: "Identifier", name: n }; }
 function BlockStatement(b)          { return { type: "BlockStatement", body: b }; }
 function ReturnStatement(a)         { return { type: "ReturnStatement", argument: a }; }
 function NewExpression(c, a)        { return { type: "NewExpression",  callee: c, arguments: a || [ ] }; }
-function CallExpression(c, a)       { return { type: "CallExpression", callee: c, arguments: a || [ ] }; }
-function ExpressionStatement(n)     { return { type: "ExpressionStatement", expression: n };
+function CallExpression(c, a)       { return { type: "CallExpression", callee: c, arguments: a }; }
+function ExpressionStatement(n)     { return { type: "ExpressionStatement", expression: n }; }
 function LogicalExpression(l, o, r) { return { type: "LogicalExpression", operator: o, left: l, right: r }; }
-function VariableDeclarator(id, i)  { return { type: "VariableDeclarator", id: id, init: i };
+function VariableDeclarator(id, i)  { return { type: "VariableDeclarator", id: id, init: i }; }
 function FunctionExpression(p, b)   { return { type: "FunctionExpression", id: null, params: p || [ ], defaults: [ ], body: b }; }
-function VariableDeclaration(d)     { return { type: "VariableDeclaration", declarations: d || [ ], kind: "var" }; }
+function VariableDeclaration(d)     { return { type: "VariableDeclaration", declarations: d, kind: "var" }; }
 function AssignmentExpression(l, r) { return { type: "AssignmentExpression", operator: "=", left: l, right: r }; }
+function SequenceExpression(e)      { return { type: "SequenceExpression", "expressions": e || [ ] }; }
 
 function ConditionalExpression(t, c, a)
 {
@@ -62,6 +56,37 @@ function UpdateExpression(a, b)
 {
     var prefix = (a == "++" || a == "--");
     return { type: "UpdateExpression", operator: prefix ? a : b, argument: prefix ? b : a, prefix: prefix };
+}
+
+function OJPrefixAnnotation(wrappedNode, stringToInsert)
+{
+    return { type: "UpdateExpression", operator: stringToInsert, argument: wrappedNode, prefix: true };
+}
+
+function OJTypeAnnotation(wrappedNode, typeString)
+{
+    return { type: "UpdateExpression", operator: " : " + typeString, argument: wrappedNode, prefix: false };
+}
+
+
+/* Tree helpers.  These build nodes */
+
+class Scope
+{
+    constructor(node, parentScope)
+    {
+        this.node = node;
+        this.parent = parentScope;
+        this.declarations = [ ];
+        this.variableCount = 0;
+    }
+
+    generateVariable(needsDeclaration)
+    {
+        const name = OJTemporaryVariablePrefix + this.variableCount++;
+        if (needsDeclaration) this.declarations.push(name);
+        return name;
+    }
 }
 
 
@@ -142,6 +167,22 @@ function makeIvarPiece(usesSelfVariable, ivarSymbol)
 }
 
 
+function makeLiteralPiece(value)
+{
+    if (value === null) {
+        return NullLiteral();
+    } else if (_.isNumber(value)) {
+        return makeNumericPiece(value);
+    } else if (_.isString(value)) {
+        return { type: "Literal", value: value, raw: ('"' + value + '"') };
+    } else if (value === true || value === false) {
+        return { type: "Literal", value: value, raw: value };
+    } else {
+        throw "Cannot make literal from " + value;
+    }
+}
+
+
 function unshiftContents(array, array2)
 {
     Array.prototype.unshift.apply(array, array2);
@@ -154,40 +195,41 @@ function pushContents(array, array2)
 }
 
 
-function transform(ast, model, options)
+function transform(astArray, model, options)
 {
     var warnings = [ ];
     var inlines  = { };
 
-    var traverser = new Traverser(ast);
+    var joinedAst = { "type": "Program", "body": [ ], "sourceType": "script" };
 
-    var scope = model.scope;
+    _.each(astArray, function(inAST) {
+        pushContents(joinedAst.body, inAST.body);
+    });
+
+    var traverser = new Traverser(joinedAst);
 
     var currentClass      = null;
     var currentMethodNode = null;
-    var inClass      = false;
-    var inMethodNode = false;
+    var currentScope      = new Scope();
 
-    var methodUsesSelfVar        = false;
-    var methodUsesTemporaryVar   = false;
-    var methodUsesLoneExpression = false;
+    var methodUsesSelfVar = false;
 
-    var optionWarnOnThisInMethods    = options["warn-this-in-methods"];
-    var optionWarnOnUnknownSelectors = options["warn-unknown-selectors"];
-    var optionWarnOnUnusedIvars      = options["warn-unused-ivars"];
-    var optionWarnOnUnknownIvars     = options["warn-unknown-ivars"];
-    var optionInlineEnum             = options["inline-enum"];
-    var optionInlineConst            = options["inline-const"];
-    var optionSqueeze                = options["squeeze"];
+    const optionWarnOnThisInMethods    = options["warn-this-in-methods"];
+    const optionWarnOnUnknownSelectors = options["warn-unknown-selectors"];
+    const optionWarnOnUnusedIvars      = options["warn-unused-ivars"];
+    const optionWarnOnUnknownIvars     = options["warn-unknown-ivars"];
+    const optionInlineEnum             = options["inline-enum"];
+    const optionInlineConst            = options["inline-const"];
+    const isTypechecker                = options["output-language"] == "typechecker";
 
-    var knownSelectors = optionWarnOnUnknownSelectors ? model.selectors : null;
+    const knownSelectors = optionWarnOnUnknownSelectors ? model.selectors : null;
+
+    let unusedIvars = { };
 
     (function setup()
     {
         if (optionInlineEnum) {
             _.each(model.enums, function(e) {
-                var enumName = e.name;
-
                 _.each(e.values, function(value, name) {
                     inlines[name] = value;
                 });
@@ -202,62 +244,64 @@ function transform(ast, model, options)
             });
         }
 
-        var additionalInlines = options["additional-inlines"];
+        let additionalInlines = options["additional-inlines"];
         if (additionalInlines) {
-            for (var key in additionalInlines) {
+            for (let key in additionalInlines) {
                 if (additionalInlines.hasOwnProperty(key)) {
-                    inlines[key] = JSON.stringify(additionalInlines[key]);
+                    inlines[key] = additionalInlines[key];
                 }
             }
+        }
+
+        if (options["output-language"] == "typechecker") {
+            optionInlineEnum  = true;
+            optionInlineConst = true;
+            isTypechecker     = true;
         }
     }());
 
 
-    function getSymbolForClassName(className) {
-        if (!className) return;
-
-        if (!Utils.isBaseObjectClass(className)) {
-            if (optionSqueeze) {
-                return model.getSqueezedName(OJClassPrefix + className, true);
-            } else {
-                return OJClassPrefix + className;
-            }
-        }
-
-        return className;
-    }
-
-
-    function getSymbolForSelectorName(selectorName) {
-        var replacedName = selectorName;
-        replacedName = replacedName.replace(/_/g,   "__");
-        replacedName = replacedName.replace(/^__/g, "_");
-        replacedName = replacedName.replace(/\:/g,  "_");
-
-        if (!Utils.isBaseObjectSelectorName(selectorName)) {
-            if (optionSqueeze) {
-                replacedName = model.getSqueezedName(OJMethodPrefix + replacedName, true);
-            } else {
-                replacedName = OJMethodPrefix + replacedName;
-            }
-        }
-
-        return replacedName;
-    }
-
-
-    function getSymbolForClassNameAndIvarName(className, ivarName)
+    function getCurrentMethodInModel()
     {
-        var result = OJIvarPrefix + className + "$" + ivarName;
-        if (optionSqueeze) result = model.getSqueezedName(result, true);
-        return result;
+        if (!currentClass || !currentMethodNode) return null;
+
+        var selectorType = currentMethodNode.selectorType;
+        var selectorName = currentMethodNode.selectorName;
+
+        if (selectorType == "+") {
+            return currentClass.getClassMethodWithName(selectorName);
+        } else {
+            return currentClass.getInstanceMethodWithName(selectorName);
+        }
     }
 
+
+    function declareScopeVariables(scope)
+    {
+        return;
+        let node = scope.node;
+        let body = node.body;
+
+        if (!(node.type === Syntax.FunctionDeclaration || node.type === Syntax.FunctionExpression)) {
+            throw new Error("Scope's node is not a FunctionDeclaration or FunctionExpression");
+        }
+
+        if (body.type !== Syntax.BlockStatement) {
+            throw new Error("Scope's node.body is not BlockStatement");
+        }
+
+        let declaration = VariableDeclaration(
+            scope.declarations.map(d => VariableDeclarator(Identifier(d)) )
+        );
+
+        body = body.body;
+        body.unshift(declaration);
+    }
 
     function replaceMessageExpression(node)
     {
         var selectorName = node.selectorName;
-        var methodSymbol = getSymbolForSelectorName(selectorName);
+        var methodSymbol = model.getSymbolForSelectorName(selectorName);
 
         var messageSelectors  = node.messageSelectors;
         var receiverContainer = node.receiver;
@@ -278,9 +322,9 @@ function transform(ast, model, options)
         }
 
         // Slow case, use oj.msgSend()
-        if (!inMethodNode) {
+        if (!currentMethodNode) {
             if ((receiverNode.type == Syntax.Identifier) && model.classes[receiverNode.name]) {
-                classSymbol = getSymbolForClassName(receiverNode.name);
+                classSymbol = model.getSymbolForClassName(receiverNode.name);
                 receiverNode = makeClassPiece(classSymbol);
             }
 
@@ -329,7 +373,7 @@ function transform(ast, model, options)
                 );
 
             } else if (model.classes[receiverName]) {
-                classSymbol = getSymbolForClassName(receiverName);
+                classSymbol = model.getSymbolForClassName(receiverName);
 
                 if (selectorName == "alloc") {
                     return NewExpression( makeClassPiece(classSymbol) );
@@ -342,29 +386,25 @@ function transform(ast, model, options)
                 receiverNode = replaceIdentifier(receiverNode, receiverContainer);
                 replacement = makeCallToReceiverPiece(receiverNode, methodSymbol, argumentNodes, false);
 
-            } else if (inClass && currentClass.isIvar(receiverName)) {
-                methodUsesLoneExpression = true;
-
-                receiverNode = makeIvarPiece(methodUsesSelfVar, getSymbolForClassNameAndIvarName(currentClass.name, receiverName));
+            } else if (currentClass && currentClass.isIvar(receiverName)) {
+                receiverNode = makeIvarPiece(methodUsesSelfVar, model.getSymbolForClassNameAndIvarName(currentClass.name, receiverName));
                 replacement = makeCallToReceiverPiece(receiverNode, methodSymbol, argumentNodes, true);
 
             } else {
-                methodUsesLoneExpression = true;
                 receiverNode = replaceIdentifier(receiverNode, receiverContainer);
                 replacement = makeCallToReceiverPiece(receiverNode, methodSymbol, argumentNodes, true);
             }
 
-        } else if (inMethodNode) {
-            methodUsesTemporaryVar   = true;
-            methodUsesLoneExpression = true;
+        } else if (currentMethodNode) {
+            let temporaryVariable = currentScope.generateVariable(true);
 
-            // ($oj_r = <receiverNode>) && $oj_r.<methodSymbol>(<argumentNodes>)
+            // ($oj_temp = <receiverNode>) && $oj_temp.<methodSymbol>(<argumentNodes>)
             //
             replacement = LogicalExpression(
-                AssignmentExpression( Identifier(OJTemporaryReturnVariable), receiverNode ),
+                AssignmentExpression( Identifier(temporaryVariable), receiverNode ),
                 "&&",
                 CallExpression(
-                    MemberExpression( Identifier(OJTemporaryReturnVariable), Identifier(methodSymbol) ),
+                    MemberExpression( Identifier(temporaryVariable), Identifier(methodSymbol) ),
                     argumentNodes
                 )
             );
@@ -381,6 +421,20 @@ function transform(ast, model, options)
         var ivars      = currentClass.getAllIvars();
         var model      = currentClass.model;
 
+        // It's important that we flatten() here, as replaceAtPropertyDirective() can return
+        // multiple nodes, resulting in an invalid AST
+        //
+        // See: https://github.com/estools/estraverse/issues/38
+        // 
+        var existingBody = _.flatten(inNode.body.body);
+
+        // Typechecker is much simpler, as we don't need to have working code
+        if (isTypechecker) {
+            let functionExpression = FunctionExpression( [ ], BlockStatement(existingBody) )
+            currentScope.node = functionExpression;
+            return ExpressionStatement(functionExpression);
+        }
+
         var registerBody    = [ ];
         var constructorBody = [ ];
 
@@ -389,7 +443,7 @@ function transform(ast, model, options)
 
             var currentRight = valueNode;
             for (var i = ivars.length - 1; i >= 0; i--) {
-                var symbol = getSymbolForClassNameAndIvarName(className, ivars[i]);
+                var symbol = model.getSymbolForClassNameAndIvarName(className, ivars[i]);
 
                 currentRight = AssignmentExpression(
                     MemberExpression(ThisExpression(), Identifier(symbol)),
@@ -401,12 +455,12 @@ function transform(ast, model, options)
         }
 
         // Determine _registerClass's 0th argument
-        var registerArg0 = makeSelectorPiece(getSymbolForClassName(className));
+        var registerArg0 = makeSelectorPiece(model.getSymbolForClassName(className));
 
         // Determine _registerClass's 1th argument
         var registerArg1;
         if (superName) {
-            var superSymbol = getSymbolForClassName(superName);
+            var superSymbol = model.getSymbolForClassName(superName);
             registerArg1 = makeSelectorPiece(superSymbol);
 
             // $oj_oj._cls.<superSymbol>.call(this)
@@ -453,12 +507,7 @@ function transform(ast, model, options)
             "rest": null,
         });
 
-        // It's important that we flatten() here, as replaceAtPropertyDirective() can return
-        // multiple nodes, resulting in an invalid AST
-        //
-        // See: https://github.com/estools/estraverse/issues/38
-        // 
-        pushContents( registerBody, _.flatten(inNode.body.body) );
+        pushContents( registerBody, existingBody );
 
         registerBody.push( ReturnStatement( Identifier(className) ) );
 
@@ -467,6 +516,8 @@ function transform(ast, model, options)
             [ Identifier(OJClassMethodsVariable), Identifier(OJInstanceMethodsVariable) ],
             BlockStatement(registerBody)
         );
+
+        currentScope.node = registerArg2;
 
         // var NAME = $oj_oj._registerClass( <registerArg0>, <registerArg1>, <registerArg2> )
         return VariableDeclaration([
@@ -483,6 +534,8 @@ function transform(ast, model, options)
 
     function replaceAtPropertyDirective(node)
     {
+        if (isTypechecker) return Traverser.RemoveNode;
+
         var propertyName = node.id.name;
 
         var makeGetter = currentClass.shouldGenerateGetterImplementationForPropertyName(propertyName);
@@ -493,7 +546,7 @@ function transform(ast, model, options)
         }
 
         var property   = currentClass.getPropertyWithName(propertyName);
-        var ivarSymbol = getSymbolForClassNameAndIvarName(currentClass.name, property.ivar);
+        var ivarSymbol = model.getSymbolForClassNameAndIvarName(currentClass.name, property.ivar);
 
         var result = [ ];
 
@@ -504,7 +557,7 @@ function transform(ast, model, options)
                 AssignmentExpression(
                     MemberExpression(
                         Identifier(OJInstanceMethodsVariable),
-                        Identifier(getSymbolForSelectorName(property.setter))
+                        Identifier(model.getSymbolForSelectorName(property.setter))
                     ),
                     FunctionExpression( [ Identifier("arg") ], BlockStatement([
                         ExpressionStatement(
@@ -525,7 +578,7 @@ function transform(ast, model, options)
                 AssignmentExpression(
                     MemberExpression(
                         Identifier( OJInstanceMethodsVariable ),
-                        Identifier( getSymbolForSelectorName(property.getter) )
+                        Identifier( model.getSymbolForSelectorName(property.getter) )
                     ),
                     FunctionExpression([], BlockStatement([
                         ReturnStatement( MemberExpression( ThisExpression(), Identifier(ivarSymbol) ) )
@@ -542,18 +595,28 @@ function transform(ast, model, options)
     {
         var paramNodes = [ ];
         var bodyNodes  = [ ];
-        var variableName;
 
-        for (var i = 0, length = node.methodSelectors.length; i < length; i++) {
-            variableName = node.methodSelectors[i].variableName;
+        if (isTypechecker) {
+            paramNodes.push(
+                OJTypeAnnotation(Identifier("self"), model.getSymbolForClassName(currentClass.name))
+            );
+        }
+
+        for (let i = 0, length = node.methodSelectors.length; i < length; i++) {
+            let variableName = node.methodSelectors[i].variableName;
+            let methodType   = node.methodSelectors[i].methodType;
 
             if (variableName) {
-                paramNodes.push( Identifier(variableName.name) );
+                if (isTypechecker && methodType) {
+                    paramNodes.push( OJTypeAnnotation(Identifier(variableName.name), model.getTypecheckerType(methodType.value) ) );
+                } else {
+                    paramNodes.push( Identifier(variableName.name) );
+                }
             }
         }
 
-        if (methodUsesSelfVar || methodUsesTemporaryVar) { //  || methodUsesLoneExpression) {
-            var declarations = [ ];
+        if (methodUsesSelfVar) {
+            let declarations = [ ];
 
             if (methodUsesSelfVar) {
                 declarations.push(VariableDeclarator(
@@ -562,32 +625,34 @@ function transform(ast, model, options)
                 ));
             }
 
-            if (methodUsesTemporaryVar) {
-                declarations.push(VariableDeclarator(
-                    Identifier(OJTemporaryReturnVariable),
-                    null
-                ));
-            }
-
-            //!i: FIX?
-            // if (methodUsesLoneExpression) {
-            //     string += "/* jshint expr: true */";
-            // }
-
             bodyNodes.push(VariableDeclaration(declarations));
         }
 
         Array.prototype.push.apply(bodyNodes, node.body.body);
 
-        return ExpressionStatement(
-            AssignmentExpression(
-                MemberExpression( 
-                    Identifier( node.selectorType == "+" ? OJClassMethodsVariable : OJInstanceMethodsVariable ),
-                    Identifier( getSymbolForSelectorName(node.selectorName) )
-                ),
-                FunctionExpression(paramNodes, BlockStatement(bodyNodes))
-            )
-        );
+        if (isTypechecker) {
+            let returnType = model.getTypecheckerType(getCurrentMethodInModel().returnType, currentClass);
+            let expression = FunctionExpression(paramNodes, OJPrefixAnnotation(BlockStatement(bodyNodes), ": " + returnType + " "));
+
+            currentScope.node = expression;
+
+            return expression;
+ 
+        } else {
+            let expression = FunctionExpression(paramNodes, BlockStatement(bodyNodes));
+
+            currentScope.node = expression;
+
+            return ExpressionStatement(
+                AssignmentExpression(
+                    MemberExpression( 
+                        Identifier( node.selectorType == "+" ? OJClassMethodsVariable : OJInstanceMethodsVariable ),
+                        Identifier( model.getSymbolForSelectorName(node.selectorName) )
+                    ),
+                    expression
+                )
+            );
+        }
     }
 
 
@@ -608,14 +673,14 @@ function transform(ast, model, options)
             canBeInstanceVariableOrSelf = (parent.object == node);
         }
 
-        if (inMethodNode && canBeInstanceVariableOrSelf) {
+        if (currentMethodNode && canBeInstanceVariableOrSelf) {
             if (currentClass.isIvar(name) || name == "self") {
-                var usesSelf = inMethodNode && methodUsesSelfVar;
+                var usesSelf = currentMethodNode && methodUsesSelfVar;
 
                 if (name == "self") {
                     replacement = makeIvarPiece(usesSelf, null);
                 } else {
-                    var ivarSymbol = getSymbolForClassNameAndIvarName(currentClass.name, name);
+                    var ivarSymbol = model.getSymbolForClassNameAndIvarName(currentClass.name, name);
                     replacement = makeIvarPiece(usesSelf, ivarSymbol);
 
                     // remove ivar from unusedIvars
@@ -637,13 +702,13 @@ function transform(ast, model, options)
             var result = inlines[name];
             if (result !== undefined) {
                 if (inlines.hasOwnProperty(name)) {
-                    return Identifier(result);
+                    return makeLiteralPiece(result);
                 }
             }
         }
 
         //!i: FIX: squeeze needs to work
-        if (optionSqueeze) {
+        if (model.squeeze) {
             var result = model.getSqueezedName(name, false);
             if (result !== undefined) {
                 throw "Fix this"
@@ -655,10 +720,16 @@ function transform(ast, model, options)
         return replacement;
     }
 
+    function replaceFunctionExpressionOrDeclaration(node)
+    {
+        if (isTypechecker && node.annotation) {
+            node.body = OJPrefixAnnotation(node.body, ": " + node.annotation.value + " ");
+        }
+    }
 
     function replaceAtSelectorDirective(node)
     {
-        var symbol = getSymbolForSelectorName(node.name);
+        var symbol = model.getSymbolForSelectorName(node.name);
 
         if (knownSelectors && !knownSelectors[node.name]) {
             warnings.push(Utils.makeError(OJWarning.UnknownSelector, "Use of unknown selector '" + node.selectorName + "'", node));
@@ -695,9 +766,8 @@ function transform(ast, model, options)
 
     function replaceAtEachStatement(node)
     {
-        var scope  = node.oj_scope;
-        var iVariable      = scope.makeInternalVariable();
-        var lengthVariable = scope.makeInternalVariable();
+        var iVariable      = currentScope.generateVariable(false);
+        var lengthVariable = currentScope.generateVariable(false);
         var arrayVariable, objectVariable;
         var declaration;
     
@@ -713,7 +783,7 @@ function transform(ast, model, options)
             }
 
             objectVariable = node.left.name;
-            declaration = VariableDeclaration();
+            declaration = VariableDeclaration([ ]);
         }
 
         // The right side is a simple identifier
@@ -722,7 +792,7 @@ function transform(ast, model, options)
 
         // The right side is an expression, we need an additional variable
         } else {
-            arrayVariable = scope.makeInternalVariable();
+            arrayVariable = currentScope.generateVariable(false);
 
             declaration.declarations.push(VariableDeclarator(
                 Identifier(arrayVariable),
@@ -787,6 +857,8 @@ function transform(ast, model, options)
     }
 
 
+
+
     traverser.replace(function(node, parent) {
         var type = node.type;
 
@@ -809,18 +881,16 @@ function transform(ast, model, options)
 
         } else if (type === Syntax.OJClassImplementation) {
             currentClass = model.classes[node.id.name];
-            inClass = true;
+            currentScope = new Scope(node, currentScope);
 
             if (optionWarnOnUnusedIvars) {
                 unusedIvars = currentClass.getAllIvarNamesWithoutProperties();
             }
 
         } else if (type === Syntax.OJMethodDefinition) {
-            currentMethodNode        = node;
-            inMethodNode             = true;
-            methodUsesSelfVar        = false;
-            methodUsesTemporaryVar   = false;
-            methodUsesLoneExpression = false;
+            currentScope      = new Scope(node, currentScope);
+            currentMethodNode = node;
+            methodUsesSelfVar = false;
 
         } else if (type === Syntax.ThisExpression) {
             if (optionWarnOnThisInMethods) {
@@ -828,7 +898,7 @@ function transform(ast, model, options)
             }
 
         } else if (type === Syntax.AssignmentExpression) {
-            if (inMethodNode &&
+            if (currentMethodNode &&
                 node.left &&
                 node.left.type == Syntax.Identifier &&
                 node.left.name == "self")
@@ -837,6 +907,7 @@ function transform(ast, model, options)
             }
 
         } else if (type === Syntax.FunctionDeclaration || type === Syntax.FunctionExpression) {
+            currentScope = new Scope(node, currentScope);
             methodUsesSelfVar = true;
         }
 
@@ -844,11 +915,18 @@ function transform(ast, model, options)
         var type = node.type;
         var replacement;
 
-        if (type === Syntax.OJClassImplementation) {
+        if (type === Syntax.Identifier) {
+            if (parent.type != Syntax.OJMessageReceiver) {
+                replacement = replaceIdentifier(node, parent);
+            }
+
+        } else if (type === Syntax.FunctionExpression || type === Syntax.FunctionDeclaration) {
+            replacement = replaceFunctionExpressionOrDeclaration(node);
+
+        } else if (type === Syntax.OJClassImplementation) {
             replacement = replaceClassImplementation(node);
 
             currentClass = null;
-            inClass = false;
 
             if (optionWarnOnUnusedIvars && unusedIvars && unusedIvars.length) {
                 _.each(unusedIvars, function(unusedIvar) {
@@ -861,7 +939,6 @@ function transform(ast, model, options)
         } else if (type === Syntax.OJMethodDefinition) {
             replacement = replaceMethodDefinition(node);
             currentMethodNode = null;
-            inMethodNode = false;
 
         } else if (type == Syntax.OJMessageExpression) {
             replacement = replaceMessageExpression(node);
@@ -871,11 +948,6 @@ function transform(ast, model, options)
 
         } else if (type === Syntax.OJAtPropertyDirective) {
             replacement = replaceAtPropertyDirective(node);
-
-        } else if (type === Syntax.Identifier) {
-            if (parent.type != Syntax.OJMessageReceiver) {
-                replacement = replaceIdentifier(node, parent);
-            }
 
         } else if (type === Syntax.OJAtSelectorDirective) {
             replacement = replaceAtSelectorDirective(node);
@@ -891,10 +963,18 @@ function transform(ast, model, options)
             node.kind = "var";
         }
 
+        if (node == currentScope.node) {
+            if (currentScope.declarations.length) {
+                declareScopeVariables(currentScope);
+            }
+
+            currentScope = currentScope.parent;
+        }
+
         return replacement;
     });
 
-    return warnings;
+    return { ast: joinedAst, warnings: warnings };
 }
 
 

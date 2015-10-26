@@ -4,11 +4,12 @@
     MIT license, http://www.opensource.org/licenses/mit-license.php
 */
 
+throw "Deprecated";
+
 var _          = require("lodash");
 var esprima    = require("./esprima");
 var Syntax     = esprima.Syntax;
 
-var Modifier   = require("./modifier");
 var Traverser  = require("./traverser");
 var Utils      = require("./utils");
 

@@ -4,6 +4,8 @@
     MIT license, http://www.opensource.org/licenses/mit-license.php
 */
 
+"use strict";
+
 var OJError     = require("./errors").OJError;
 var Utils       = require("./utils");
 var _           = require("lodash");
@@ -11,6 +13,9 @@ var _           = require("lodash");
 
 var OJDynamicProperty = " OJDynamicProperty ";
 
+var OJClassPrefix     = "$oj_c_";
+var OJMethodPrefix    = "$oj_f_";
+var OJIvarPrefix      = "$oj_i_";
 
 var sBase52Digits = "etnrisouaflchpdvmgybwESxTNCkLAOMDPHBjFIqRUzWXVJKQGYZ0516372984";
 
@@ -81,12 +86,14 @@ function OJModel()
     this.classes   = { };
     this.protocols = { };
     this.selectors = { };
-    this.scope     = new OJScope(null, null, true);
+    this.squeeze   = false;
 
     this._squeezerId      = 0;
     this._maxSqueezerId   = 0;
     this._squeezerToMap   = { };
     this._squeezerFromMap = { };
+
+    this._typecheckerClassMap = null;
 
     this.types = { };
     this.registerType( [
@@ -105,7 +112,8 @@ function OJModel()
 
 OJModel.prototype.setupSqueezer = function(start, max)
 {
-    this._squeezerId = start;
+    this.squeeze        = true;
+    this._squeezerId    = start;
     this._maxSqueezerId = max;
 }
 
@@ -150,6 +158,7 @@ OJModel.prototype.loadState = function(state)
     var types     = this.types;
 
     if (state.squeezer) {
+        this.squeeze          = true;
         this._squeezerId      = state.squeezer.id   || 0;
         this._squeezerFromMap = state.squeezer.from || { };
         this._squeezerToMap   = state.squeezer.to   || { };
@@ -177,15 +186,14 @@ OJModel.prototype.loadState = function(state)
 }
 
 
-
 OJModel.prototype.saveState = function()
 {
     return {
-        squeezer: {
+        squeezer: this.squeeze ? {
             from: this._squeezerFromMap,
             to:   this._squeezerToMap,
             id:   this._squeezerId
-        },
+        } : null,
 
         consts:    this.consts,
         enums:     this.enums,
@@ -227,16 +235,16 @@ OJModel.prototype.prepare = function()
 
         cls.doAutomaticSynthesis();
 
-        methods = cls.getAllMethods();
+        let methods = cls.getAllMethods();
         for (i = 0, length = methods.length; i < length; i++) {
             selectors[methods[i].selectorName] = true;
         }
     });
 
     _.each(this.protocols, function(protocol, name) {
-        var i, length;
+        let i, length;
 
-        methods = protocol.getAllMethods();
+        let methods = protocol.getAllMethods();
         for (i = 0, length = methods.length; i < length; i++) {
             selectors[methods[i].selectorName] = true;
         }
@@ -375,6 +383,113 @@ OJModel.prototype.isNumericType = function(t)
 OJModel.prototype.isBooleanType = function(t)
 {
     return this.types[t] == "Boolean";
+}
+
+
+OJModel.prototype.getSymbolForClassName = function(className)
+{
+    if (!className) return;
+
+    if (!Utils.isBaseObjectClass(className)) {
+        if (this.squeeze) {
+            return this.getSqueezedName(OJClassPrefix + className, true);
+        } else {
+            return OJClassPrefix + className;
+        }
+    }
+
+    return className;
+}
+
+
+OJModel.prototype.getSymbolForSelectorName = function(selectorName)
+{
+    var replacedName = selectorName;
+    replacedName = replacedName.replace(/_/g,   "__");
+    replacedName = replacedName.replace(/^__/g, "_");
+    replacedName = replacedName.replace(/\:/g,  "_");
+
+    if (!Utils.isBaseObjectSelectorName(selectorName)) {
+        if (this.squeeze) {
+            replacedName = this.getSqueezedName(OJMethodPrefix + replacedName, true);
+        } else {
+            replacedName = OJMethodPrefix + replacedName;
+        }
+    }
+
+    return replacedName;
+}
+
+
+OJModel.prototype.getSymbolForClassNameAndIvarName = function(className, ivarName)
+{
+    var result = OJIvarPrefix + className + "$" + ivarName;
+    if (this.squeeze) result = this.getSqueezedName(result, true);
+    return result;
+}
+
+
+
+
+OJModel.prototype.getTypecheckerType = function(inType, currentClass)
+{
+    var value;
+
+    if (!this._typecheckerClassMap) {
+        let typecheckerClassMap = { };
+
+        _.each(this.classes, function(value) {
+            var name = this.getSymbolForClassName(value.name);
+            typecheckerClassMap[name] = name;
+            typecheckerClassMap[name + "$Static"] = name + "$Static";
+            typecheckerClassMap[value.name] = name;
+        }.bind(this))
+
+        this._typecheckerClassMap = typecheckerClassMap;
+    }
+
+    if (inType == "String" || inType == "string") {
+        return "string";
+
+    } else if (this.isNumericType(inType)) {
+        return "number";
+
+    } else if (this.isBooleanType(inType)) {
+        return "boolean";
+
+    } else if (inType == "Array") {
+        return "any[]";
+
+    } else if (inType == "void") {
+        return "void";
+
+    } else if (inType == "instancetype" && currentClass) {
+        return this.getTypecheckerType(currentClass.name);
+
+    } else if ((value = this._typecheckerClassMap[inType])) {
+        return value;
+
+    } else if (inType.indexOf("<") >= 0) {
+        // "Array<Array<String>>"" becomes [ "Array", "Array", "String" ]
+        var inParts  = inType.replace(/\>/g, "").split("<");
+        var brackets = "";
+
+        for (var i = 0, length = inParts.length; i < length; i++) {
+            var inPart = inParts[i];
+
+            if (inPart == "Array" || inPart == "array") {
+                brackets += "[]";
+            } else {
+                value = this.getTypecheckerType(inPart);
+                break;
+            }
+        };
+
+        return value + brackets;
+
+    } else {
+        return "any";
+    }
 }
 
 
@@ -833,113 +948,6 @@ OJClass.prototype.getPropertyWithName = function(propertyName)
 }
 
 
-function OJScope(node, parent, hoist)
-{
-    this.node       = node;
-    this.parent     = parent || null;
-    this.hoist      = !!hoist;
-    this.children   = [ ];
-    this.additional = [ ];
-    this.tempCount  = 0;
-
-    this._nameToKindMap = { };
-
-    if (parent) {
-        parent.children.push(this);
-    }
-}
-
-OJScope.VariableKindVar       = "var";
-OJScope.VariableKindConst     = "const";
-OJScope.VariableKindLet       = "let";
-OJScope.VariableKindParam     = "param";
-OJScope.VariableKindFunction  = "fun";
-OJScope.VariableKindCaught    = "caught";
-
-OJScope.prototype.declareVariable = function(name, kind)
-{
-    // function isConstLet(str)
-    // {
-    //     return str === "const" || str === "let";
-    // }
-
-    // if (kind == OJScope.VariableKindFunction ||
-    //     kind == OJScope.VariableKindParam ||
-    //     kind == OJScope.VariableKindVar)
-    // {
-    //     var scope = this;
-
-    //     while (!scope.hoist) {
-    //         var kind = scope._nameToKindMap[name];
-
-    //         if (kind && isConstLet(kind)) {
-    //             Utils.throwError(OJError.VariableAlreadyDeclared, "'" + name + "' is already defined.");
-    //         }
-
-    //         scope = scope.parent;
-    //     }
-    // }
-
-    // // name exists in scope and either new or existing kind is const|let => error
-    // if (scope.decls.has(name) && (options.disallowDuplicated || isConstLet(scope.decls.get(name).kind) || isConstLet(kind))) {
-    //     return error(getline(node), "{0} is already declared", name);
-    // }
-
-    // // if (kind == OJScope.VariableKindVar && !this.hoist) {
-    // //     return this.parent.declareVariable(name, kind);
-    // // }
-
-    // // if (this._nameToKindMap[name]) {
-    // //     Utils.throwError(OJError.VariableAlreadyDeclared, "'" + name + "' is already defined.");
-    // // }
-
-    // this._nameToKindMap[name] = kind;
-}
-
-
-OJScope.prototype.initializeVariable = function(name)
-{
-
-}
-
-
-OJScope.prototype.makeInternalVariable = function()
-{
-    if (!this.hoist) {
-        return this.parent.makeInternalVariable();
-    } else {
-        var name = "$oj_t_" + this.tempCount++;
-        this.additional.push(name);
-        return name;
-    }
-}
-
-
-OJScope.prototype.toString = function(lines, indent)
-{
-    var i, length;
-
-    if (!lines) {
-        lines = [ ];
-
-        for (i = 0, length = this.children.length; i < length; i++) {
-            this.children[i].toString(lines, "");
-        }
-
-        lines.push("");
-        return lines.join("\n");
-    }
-
-    var type = this.node.type;
-
-    lines.push(indent + "+ " + type);
-
-    for (i = 0, length = this.children.length; i < length; i++) {
-        this.children[i].toString(lines, "  " + indent);
-    }
-}
-
-
 module.exports = {
     OJModel:    OJModel,
     OJClass:    OJClass,
@@ -947,6 +955,5 @@ module.exports = {
     OJProperty: OJProperty,
     OJMethod:   OJMethod,
     OJIvar:     OJIvar,
-    OJEnum:     OJEnum,
-    OJScope:    OJScope
+    OJEnum:     OJEnum
 };

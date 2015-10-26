@@ -4,15 +4,13 @@
     MIT license, http://www.opensource.org/licenses/mit-license.php
 */
 
+"use strict";
+
 var esprima     = require("./esprima");
 var Syntax      = esprima.Syntax;
 
 var Builder     = require("./builder");
-var Modifier    = require("./modifier");
-var Generator   = require("./generator");
 var Transformer = require("./transformer");
-
-var Hinter      = require("./hinter");
 var TypeChecker = require("./typechecker");
 
 var OJError     = require("./errors").OJError;
@@ -43,65 +41,38 @@ function errorForEsprimaError(inError)
 }
 
 
+class CompilerFile {
+
+constructor(arg)
+{
+    if (_.isString(arg)) {
+        this.path     = arg;
+        this.contents = fs.readFileSync(f).toString();
+        this.mtime    = Infinity;
+
+    } else {
+        if (arg.path && arg.contents) {
+            this.path     = arg.path;
+            this.contents = arg.contents;
+        } else {
+            throw new Error("File object must contain 'path' and 'contents' keys");
+        }
+
+        this.mtime = arg.mtime ? arg.mtime : Infinity;      
+    }
+
+    this.ast = null;
+
+}
+
+}
+
+
 function Compiler(options)
 {
     options = options || { };
 
-    var paths    = [ ];
-    var contents = [ ];
-
-    // The 'files' option can either be an Array of String file paths, or
-    // an Array of Objects with the following keys:
-    //        path: file path 
-    //    contents: file contents
-    //
-    _.each(options.files, function(f) {
-        if (_.isString(f)) {
-            paths.push(f);
-            contents.push(fs.readFileSync(f).toString());
-
-        } else {
-            if (f.path && f.contents) {
-                paths.push(f.path);
-                contents.push(f.contents);
-            }
-        }
-    });
-
-    var parserOptions   = { loc: true }
-    var modifierOptions = { };
-
-    if (options["prepend"]) {
-        var prependLines = options["prepend"];
-
-        if (typeof prependLines == "string") {
-            prependLines = prependLines.split("\n")
-        }
-
-        modifierOptions["prepend"] = prependLines;
-    }
-
-    if (options["append"]) {
-        var appendLines = options["append"];
-
-        if (typeof appendLines == "string") {
-            appendLines = appendLines.split("\n")
-        }
-
-        modifierOptions["append"] = appendLines;
-    }
-
-    if (options["source-map-file"]) {
-        modifierOptions.sourceMapFile = options["source-map-file"];
-    }
-
-    if (options["source-map-root"]) {
-        modifierOptions.sourceMapRoot = options["source-map-root"];
-    }
-
-    if (options["dump-modifier"]) {
-        modifierOptions.debug = true;
-    }
+    var files        = (options.files || { }).map( f => new CompilerFile(f) );
 
     this._model = new OJModel();
 
@@ -116,22 +87,8 @@ function Compiler(options)
         );
     }
 
-    var lineCounts = [ ];
-    var allLines   = [ ];
-
-    for (var i = 0, length = contents.length; i < length; i++) {
-        var lines = contents[i].split("\n");
-        lineCounts.push(lines.length);
-        Array.prototype.push.apply(allLines, lines);
-    }
-
-    this._inputFiles           = paths;
-    this._inputLines           = allLines;
-    this._inputLineCounts      = lineCounts;
-    this._inputParserOptions   = parserOptions;
-    this._inputModifierOptions = modifierOptions;
-
-    this._options   = options;
+    this._files   = files;
+    this._options = options;
 }
 
 
@@ -173,17 +130,25 @@ Compiler.prototype._cleanupError = function(e)
 
 Compiler.prototype.compile = function(callback)
 {
-    var dumpTime = this._options["dump-time"];
+    var dumpTime       = 1 || this._options["dump-time"];
+    var outputLanguage = this._options["output-language"];
 
-    var waitingForHinter  = true;
     var waitingForChecker = true;
 
     var cleanupError = function(err) {
         if (err) this._cleanupError(err);
     }.bind(this);
 
+    function getLines(stringOrLines) {
+        if (typeof stringOrLines == "string") {
+            return stringOrLines.split("\n")
+        } else {
+            return stringOrLines;
+        }
+    }
+
     function finish(err, result) {
-        if (err || (!waitingForHinter && !waitingForChecker)) {
+        if (err || !waitingForChecker) {
             cleanupError(err);
             callback(err, result);
         }
@@ -202,90 +167,91 @@ Compiler.prototype.compile = function(callback)
     }
 
     try {
-        var compiler           = this;
-        var inputFiles         = this._inputFiles;
-        var inputLines         = this._inputLines;
-        var inputParserOptions = this._inputParserOptions;
-        var model              = this._model;
-        var options            = this._options;
+        var compiler  = this;
+        var files     = this._files;
+        var model     = this._model;
+        var options   = this._options;
+
+        var hasOutput  = options["output-language"] != "none";
+        var checkTypes = options["check-types"];
 
         var result  = { };
         var lineMap;
-        var ast;
+        var primaryInputASTs     = [ ];
+        var typecheckerInputASTs = [ ];
 
-        // Parse to AST
+        var typecheckerOutputAst;
+
+        // Parse each file's contents into an AST
         time("Parse", function() {
-            try { 
-                ast = esprima.parse(inputLines.join("\n"), inputParserOptions);
-            } catch (e) {
-                throw errorForEsprimaError(e);
+            for (let file of files) {
+                try { 
+                    file.ast = esprima.parse(file.contents, { loc: true });
+                } catch (e) {
+                    throw errorForEsprimaError(e);
+                }
             }
         });
 
         // Do first pass with Builder and save into model
         time("Build", function() {
-            (new Builder(ast, model, options)).build();
+            for (let file of files) {
+                (new Builder(file.ast, model, options)).build();
+                primaryInputASTs.push(file.ast);
+            }
         });
 
-        var transpileModifier;
-        var transpileGenerator;
-        if (options["output-language"] != "none") {
-            transpileModifier  = new Modifier(this._inputFiles, this._inputLineCounts, this._inputLines, this._inputModifierOptions);
-            transpileGenerator = new Generator(ast, model, transpileModifier, false, options);
-        }
+        // Transfer or clone AST (if needed)
+        time("AST Clone", function() {
+            if (checkTypes && hasOutput) {
+                typecheckerInputASTs = _.cloneDeep(primaryInputASTs);
+            } else if (checkTypes) {
+                typecheckerInputASTs = primaryInputASTs;
+                primaryInputASTs = null;
+            }
+        })
 
-        var typeCheckModifier;
-        var typeCheckGenerator;
-        if (options["check-types"]) {
-            typeCheckModifier  = new Modifier(this._inputFiles, this._inputLineCounts, this._inputLines.slice(0), this._inputModifierOptions);
-            typeCheckGenerator = new Generator(ast, model, typeCheckModifier, true, options);
-        }
+        // Transform Output AST, generate code, and concatenate
+        if (hasOutput) {
+            let outputAST  = null;
+            let outputMap  = null;
+            let outputCode = "";
 
-        // Transpiler
-        if (!options["use-transformer"] && transpileGenerator) {
-            // Do second pass with Generator
-            time("Generate", function() {
-                transpileGenerator.generate();
-            });
-
-            time("Finish", function() {
-                result = transpileGenerator.finish();
-            });
-
-            // Add real file to errors
-            _.each(result.warnings || [ ], function(e) {
-                this._cleanupError(e);
-            }.bind(this));
-
-            // Add state to result
-            time("Archive", function() {
-                result.state = model.saveState();
-                lineMap = result._lines;
-                delete(result._lines);
-            });
-        }
-
-
-        // Transform
-        if (options["use-transformer"]) {
             time("Transform", function() {
                 // profiler.startProfiling("transformer");
-                Transformer.transform(ast, model, options);
+
+                let t = Transformer.transform(primaryInputASTs, model, options);
+                outputAST = t.ast;
+                result.warnings = (result.warnings || [ ]).concat(t.warnings);
+
                 // var cpuProfile = profiler.stopProfiling("transformer");
                 // fs.writeFileSync("out.cpuprofile", JSON.stringify(cpuProfile));
             });
 
-            time("Transform - gen", function() {
-                result.code = escodegen.generate(ast);
+            time("Generate", function() {
+                if (0) {
+                    let output = escodegen.generate(outputAST, {
+                        sourceMap: "internal",
+                        sourceMapWithCode: true
+                    });
+
+                    outputCode = output.code;
+                    outputMap  = output.map;
+                    } else {
+                    outputCode = escodegen.generate(outputAST);
+                }
+
             });
 
-            if (this._inputModifierOptions.prepend) {
-                result.code = this._inputModifierOptions.prepend.join("\n") + result.code;
-            }
+            time("Concatenate", function() {
+                function getString(s) {
+                    if (Array.isArray(s)) return s.join("\n");
+                    else if (s) return s;
+                    else return "";
+                }
 
-            if (this._inputModifierOptions.append) {
-                result.code = result.code + this._inputModifierOptions.append.join("\n");
-            }
+                result.code = getString(options.prepend) + outputCode + getString(options.append);
+            });
 
             time("Archive", function() {
                 result.state = model.saveState();
@@ -310,11 +276,21 @@ Compiler.prototype.compile = function(callback)
 
         // Type checker
         //
-        if (typeCheckGenerator) {
+        if (0 && checkTypes) {
+            let outputAST  = null;
+            let outputCode = "";
+
             var noImplicitAny = options["no-implicit-any"];
 
+            time("Transform", function() {
+                let t = Transformer.transform(primaryInputASTs, model, options);
+                outputAST = t.ast;
+                result.warnings = (result.warnings || [ ]).concat(t.warnings);
+
+            });
+
             time("Type Check", function() {
-                var checker = new TypeChecker(model, typeCheckGenerator, inputFiles, noImplicitAny);
+                var checker = new TypeChecker(model, typecheckerInputASTs, inputFiles, noImplicitAny);
 
                 checker.check(function(err, warnings) {
                     waitingForChecker = false;
@@ -324,35 +300,6 @@ Compiler.prototype.compile = function(callback)
             });
         } else {
             waitingForChecker = false;
-            finish(null, result);
-        }
-
-
-        // Hinter
-        //
-        if (options["jshint"]) {
-            var config = options["jshint-config"];
-            var ignore = options["jshint-ignore"];
-
-            var hinter = new Hinter(result.code, config, ignore, lineMap, inputFiles, result.cache ? result.cache.hinter : { });
-
-            var start = process.hrtime();
-
-            hinter.run(function(err, hints) {
-                waitingForHinter = false;
-                result.warnings = (result.warnings || [ ]).concat(hints);
-
-                if (result.cache) {
-                    result.cache.hinter = hinter.getCache();
-                }
-
-                printTime("Hinter", start);
-
-                finish(err, result);
-            });
-
-        } else {
-            waitingForHinter = false;
             finish(null, result);
         }
 
@@ -372,4 +319,9 @@ Compiler.prototype.compile = function(callback)
 }
 
 
-module.exports = Compiler;
+module.exports = {
+    compile(options, callback) {
+        var compiler = new Compiler(options);
+        compiler.compile(callback);
+    }
+};

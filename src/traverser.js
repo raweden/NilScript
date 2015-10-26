@@ -35,7 +35,6 @@ ojVisitorKeys[ Syntax.OJConstDeclaration             ] = [ "declarations" ];
 ojVisitorKeys[ Syntax.OJEnumDeclaration              ] = [ "declarations" ];
 ojVisitorKeys[ Syntax.OJProtocolDefinition           ] = [ "id", "body" ];
 ojVisitorKeys[ Syntax.OJMethodDeclaration            ] = [ "returnType", "methodSelectors" ];
-ojVisitorKeys[ Syntax.OJIdentifierWithAnnotation     ] = [ "annotation" ];
 ojVisitorKeys[ Syntax.OJAtCastExpression             ] = [ "id", "argument" ];
 ojVisitorKeys[ Syntax.OJAtTypedefDeclaration         ] = [ "from", "to" ];
 ojVisitorKeys[ Syntax.OJAtEachStatement              ] = [ "left", "right", "body" ];

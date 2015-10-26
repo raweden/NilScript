@@ -1,5 +1,22 @@
 CHANGELOG
 
+
+2.0.0 (work in progress)
+
+2.x is a backwards incompatible release, with a focus on ECMAScript 6 and ESTree AST output.
+
+Removed:
+ - Removed `--debug-message-send`.
+ - Remove JSHint integration.  It duplicates many warnings that the typechecker catches.  Also, the ability
+   to output an AST allows tools such as ESLint or Babel to be used.
+
+Enhancements:
+ - Update to Esprima 2.6
+
+Additions:
+ - AST output 
+
+
 ---
 
 1.1

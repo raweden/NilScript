@@ -2078,25 +2078,27 @@
             return this;
         },
 
-        finishFunctionDeclaration: function (id, params, defaults, body, generator) {
+        finishFunctionDeclaration: function (id, params, defaults, body, generator, annotation) { //!oj: Add annotation
             this.type = Syntax.FunctionDeclaration;
             this.id = id;
             this.params = params;
             this.defaults = defaults;
             this.body = body;
             this.generator = generator;
+            this.annotation = annotation; //!oj: Add annotation
             this.expression = false;
             this.finish();
             return this;
         },
 
-        finishFunctionExpression: function (id, params, defaults, body, generator) {
+        finishFunctionExpression: function (id, params, defaults, body, generator, annotation) { //!oj: Add annotation
             this.type = Syntax.FunctionExpression;
             this.id = id;
             this.params = params;
             this.defaults = defaults;
             this.body = body;
             this.generator = generator;
+            this.annotation = annotation; //!oj: Add annotation
             this.expression = false;
             this.finish();
             return this;
@@ -3112,7 +3114,7 @@
         }
 
         strict = previousStrict;
-        return node.finishFunctionExpression(null, paramInfo.params, paramInfo.defaults, body, isGenerator);
+        return node.finishFunctionExpression(null, paramInfo.params, paramInfo.defaults, body, isGenerator, null);  //!oj: null for annotation
     }
 
     function parsePropertyMethodFunction() {
@@ -5258,6 +5260,7 @@
         }
 
 
+        var annotation = match(":") ? oj_parseTypeAnnotation() : null;  //!oj: Allow annotations
         previousStrict = strict;
         body = parseFunctionSourceElements();
         if (strict && firstRestricted) {
@@ -5270,7 +5273,7 @@
         strict = previousStrict;
         state.allowYield = previousAllowYield;
 
-        return node.finishFunctionDeclaration(id, params, defaults, body, isGenerator);
+        return node.finishFunctionDeclaration(id, params, defaults, body, isGenerator, annotation);  //!oj: Allow annotations
     }
 
     function parseFunctionExpression() {
@@ -5315,6 +5318,8 @@
             message = tmp.message;
         }
 
+
+        var annotation = match(":") ? oj_parseTypeAnnotation() : null;  //!oj: Allow annotations
         previousStrict = strict;
         body = parseFunctionSourceElements();
         if (strict && firstRestricted) {
@@ -5326,7 +5331,7 @@
         strict = previousStrict;
         state.allowYield = previousAllowYield;
 
-        return node.finishFunctionExpression(id, params, defaults, body, isGenerator);
+        return node.finishFunctionExpression(id, params, defaults, body, isGenerator, annotation);  //!oj: Allow annotations
     }
 
     // ECMA-262 14.5 Class Definitions
@@ -6110,8 +6115,16 @@
         return node.oj_finishAtDynamicDirective(ids);
     }
 
-    function oj_parseType() {
-        var result = parseVariableIdentifier().name;
+    function oj_parseType(allowVoid) {
+        var result;
+
+        if (matchKeyword("void")) {
+            lex();
+            result = "void";
+        } else {
+            result = parseVariableIdentifier().name;
+        }
+
         if (!match('<')) return result;
 
         // Handle id<Foo>, id<Foo, Bar>, id<Foo<Bar, Foo<Baz>>, etc

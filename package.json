@@ -1,34 +1,44 @@
 {
     "name": "nilscript",
     "description": "compiler for the NilScript language",
-    "homepage": "http://github.com/musictheory/NilScript",
+    "homepage": "http://github.com/raweden/NilScript",
+    "private":true,
     "main": "./lib/api.js",
     "bin": {
         "ojc": "./bin/ojc"
     },
     "version": "2.1.0",
-    "engines": { "node": ">=6.0" },
-    "maintainers": [{
-        "name": "Ricci Adams",
-        "email": "npm@ricciadams.com",
-        "web": "http://www.ricciadams.com"
-    }],
+    "engines": {
+        "node": ">=6.0"
+    },
+    "maintainers": [
+        {
+            "name": "Jesper Svensson (Author of modification within this fork)",
+            "email": "info@raweden.se",
+            "web": "http://www.raweden.se"
+        },
+        {
+            "name": "Ricci Adams (Original author)",
+            "email": "npm@ricciadams.com",
+            "web": "http://www.ricciadams.com"
+        }
+    ],
     "repository": {
         "type": "git",
-        "url": "http://github.com/musictheory/NilScript.git"
+        "url": "http://github.com/raweden/NilScript.git"
     },
     "license": "MIT",
     "devDependencies": {
         "mocha": "*"
     },
     "dependencies": {
-        "async":       "1.x",
-        "estraverse":  "4.x",
-        "lodash":      "4.x",
-        "mkdirp":      "0.5.x",
+        "async": "1.x",
+        "estraverse": "4.x",
+        "lodash": "4.x",
+        "mkdirp": "0.5.x",
         "node-getopt": "0.2.x",
-        "source-map":  "0.5.x",
-        "typescript":  "2.9.x"
+        "source-map": "0.5.x",
+        "typescript": "2.9.x"
     },
     "scripts": {
         "test": "mocha"

@@ -2,6 +2,7 @@
     Generator.js
     Generates JavaScript or TypeScript from input code/AST/model
     (c) 2013-2018 musictheory.net, LLC
+    Modification by Jesper Svensson @ http://www.raweden.se
     MIT license, http://www.opensource.org/licenses/mit-license.php
 */
 
@@ -18,6 +19,7 @@ const Utils      = require("./Utils");
 const OJModel    = require("./model").OJModel;
 const OJError    = require("./Errors").OJError;
 const OJWarning  = require("./Errors").OJWarning;
+const NSRuntimeModel = require("./model").NSRuntimeModel;
 
 const Location = require("./model/OJSymbolTyper").Location;
 
@@ -745,8 +747,14 @@ generate()
         let name   = node.name;
         let isSelf = (name == "self");
 
-        if (name[0] === "$") {
-            if (name.indexOf("$oj") == 0) {
+        if (name[0] === "$"){
+            // determines if the access to $ (dollar) is accessing the underlaying objc like callable like $oj_oj.msgSend() then we dont throw a error here.
+            let isValidDollarUse = false;
+            if(name === OJRootVariable && (parent && parent.type == Syntax.MemberExpression)){
+                isValidDollarUse = isValidRuntimeUsage(node, parent);
+            }
+            // original implementation with a slight modification to check if the above statement retunred true or false.
+            if(!isValidDollarUse && name.indexOf("$oj") == 0) {
                 if (name[3] == "$" || name[3] == "_") {
                     Utils.throwError(OJError.DollarOJIsReserved, "Identifiers may not start with \"$oj_\" or \"$oj$\"", node);
                 }

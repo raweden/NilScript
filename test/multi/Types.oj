@@ -1,5 +1,5 @@
 
-// @name Basic Type
+// @name Basic Type (Types.oj)
 
 @type Rect = Array;
 @type MyNumber = Number;
@@ -7,40 +7,40 @@
 true;
 
 // --------------------------------------------------------------------
-// @name Duplicate Type - OK
+// @name Duplicate Type - OK (Types.oj)
 
 @type Rect = Array;
-@type Rect = Array;    //@error OJDuplicateDeclarationError
+@type Rect = Array;    //@error NSCDuplicateDeclarationError
 
 true;
 
 // --------------------------------------------------------------------
-// @name Type Exists
+// @name Type Exists (Types.oj)
 
 @implementation Foo
 @end
 
-@type Foo = Number;   //@error OJDuplicateDeclarationError
+@type Foo = Number;   //@error NSCDuplicateDeclarationError
 
 // --------------------------------------------------------------------
-// @name Type Exists
+// @name Type Exists (Types.oj)
 
 @type Foo = Number;
 
-@implementation Foo  //@error OJDuplicateDeclarationError
+@implementation Foo  //@error NSCDuplicateDeclarationError
 @end
 
 // --------------------------------------------------------------------
-// @name Circular Type 1
-// @error-no-line OJCircularTypeHierarchyError
+// @name Circular Type 1 (Types.oj)
+// @error-no-line NSCCircularTypeHierarchyError
 
 @type Foo  = Foo2;
 @type Foo2 = Foo3;
 @type Foo3 = Foo;
 
 // --------------------------------------------------------------------
-// @name Circular Type 2
-// @error-no-line OJCircularTypeHierarchyError
+// @name Circular Type 2 (Types.oj)
+// @error-no-line NSCCircularTypeHierarchyError
 
 @type Foo  = Foo2;
 @type Foo2 = Foo;

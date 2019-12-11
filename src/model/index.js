@@ -20,7 +20,7 @@ module.exports = {
     OJEnum:     require("./OJEnum"),
     OJGlobal:   require("./OJGlobal"),
     OJType:     require("./OJType"),
-
+    NSRuntimeModel:    require("./NSRuntimeModel"),
     // For public APIs
     OJCompileCallbackFile: require("./OJCompileCallbackFile")
 };

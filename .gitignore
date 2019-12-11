@@ -1,2 +1,7 @@
+dev
 node_modules
 Project.sublime-workspace
+package-lock.json
+Road-Map.md
+AST Structures.md
+.DS_Store

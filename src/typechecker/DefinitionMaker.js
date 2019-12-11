@@ -17,10 +17,10 @@ const OJType             = require("../model/OJType");
 module.exports = class DefinitionMaker {
 
 
-constructor(ojModel)
+constructor(OJModel)
 {
-    this._model       = ojModel;
-    this._symbolTyper = ojModel.getSymbolTyper();
+    this._model       = OJModel;
+    this._symbolTyper = OJModel.getSymbolTyper();
 }
 
 

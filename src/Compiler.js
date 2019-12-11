@@ -714,12 +714,12 @@ compile(options, callback)
 
         // If we have an internal error, throw it now
         {
-            if (err && err.name && !err.name.startsWith("OJ")) {
+            if (err && err.name && !err.name.startsWith("NSC")) {
                 throw err;
             }
 
             _.each(errors, function(error) {
-                if (!error.name.startsWith("OJ")) {
+                if (!error.name.startsWith("NSC")) {
                     throw error;
                 }
             });

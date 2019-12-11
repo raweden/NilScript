@@ -6,8 +6,8 @@
 
 @property id foo;
 
-- (void) setFoo:(id)foo { _foo = foo; } //@warning OJUndeclaredInstanceVariableWarning
-- (id) foo { return _foo; }             //@warning OJUndeclaredInstanceVariableWarning
+- (void) setFoo:(id)foo { _foo = foo; } //@warning NSCUndeclaredInstanceVariableWarning
+- (id) foo { return _foo; }             //@warning NSCUndeclaredInstanceVariableWarning
 
 @end
 
@@ -20,7 +20,7 @@
 
 @property (readonly) id foo;
 
-- (id) foo { return _foo; } //@warning OJUndeclaredInstanceVariableWarning
+- (id) foo { return _foo; } //@warning NSCUndeclaredInstanceVariableWarning
 
 @end
 
@@ -33,7 +33,7 @@
 
 - (void) testCheckIvar
 {
-     _moo;  //@warning OJUndeclaredInstanceVariableWarning
+     _moo;  //@warning NSCUndeclaredInstanceVariableWarning
 }
 
 @end
@@ -46,7 +46,7 @@
 @implementation UseOfThisInMethod
 
 function usesSelf() {
-    self; //@warning OJUseOfSelfInNonMethodWarning
+    self; //@warning NSCUseOfSelfInNonMethodWarning
 }
 
 @end
@@ -60,7 +60,7 @@ function usesSelf() {
 
 - (void) foo
 {
-    this.doSomething(); //@warning OJUseOfThisInMethodWarning
+    this.doSomething(); //@warning NSCUseOfThisInMethodWarning
 }
 
 @end
@@ -70,7 +70,7 @@ function usesSelf() {
 // @name Non-integer enum
 
 @enum {
-    Foo = "Foo"  // @error OJNonIntegerEnumError
+    Foo = "Foo"  // @error NSCNonIntegerEnumError
 }
 
 
@@ -78,27 +78,27 @@ function usesSelf() {
 // @name Non-integer enum 2
 
 @enum {
-    Foo = 3.1415  // @error OJNonIntegerEnumError
+    Foo = 3.1415  // @error NSCNonIntegerEnumError
 }
 
 
 // --------------------------------------------------------------------
 // @name Non-literal Const
 
-@const moo = { };  // @error OJNonLiteralConstError
+@const moo = { };  // @error NSCNonLiteralConstError
 
 
 // --------------------------------------------------------------------
 // @name Non-literal Const 2
 
-@const moo = (4 + 3);  // @error OJNonLiteralConstError
+@const moo = (4 + 3);  // @error NSCNonLiteralConstError
 
 
 // --------------------------------------------------------------------
 // @name Non-literal Enum
 
 @enum {
-    Foo = { }  // @error OJNonLiteralEnumError
+    Foo = { }  // @error NSCNonLiteralEnumError
 }
 
 
@@ -106,7 +106,7 @@ function usesSelf() {
 // @name Non-literal Enum 2
 
 @enum {
-    Foo = (4 + 3)  // @error OJNonLiteralEnumError
+    Foo = (4 + 3)  // @error NSCNonLiteralEnumError
 }
 
 
@@ -117,7 +117,7 @@ function usesSelf() {
 
 - (void) test
 {
-    var self = "foo";  //@error OJSelfIsReservedError
+    var self = "foo";  //@error NSCSelfIsReservedError
 }
 
 @end
@@ -130,7 +130,7 @@ function usesSelf() {
 
 - (void) test
 {
-    function moo(self) {  //@error OJSelfIsReservedError
+    function moo(self) {  //@error NSCSelfIsReservedError
 
     }
 }
@@ -145,7 +145,7 @@ function usesSelf() {
 
 - (void) test
 {
-    var moo = function (self) {  //@error OJSelfIsReservedError
+    var moo = function (self) {  //@error NSCSelfIsReservedError
 
     }
 }
@@ -160,7 +160,7 @@ function usesSelf() {
 
 - (void) test
 {
-    var $oj_foo = "foo"; //@error OJDollarOJIsReservedError
+    var $oj_foo = "foo"; //@error NSCDollarNSIsReservedError
 }
 
 @end
@@ -170,13 +170,13 @@ function usesSelf() {
 // @name $oj Reserved 2
 
 function test() {
-    var $oj_foo;   //@error OJDollarOJIsReservedError
+    var $oj_foo;   //@error NSCDollarNSIsReservedError
 }
 
 
 // --------------------------------------------------------------------
 // @name Ivar Claimed
-// @error-no-line OJInstanceVariableAlreadyClaimedError
+// @error-no-line NSCInstanceVariableAlreadyClaimedError
 
 @implementation InstanceVariableAlreadyClaimed
 
@@ -191,7 +191,7 @@ function test() {
 
 // --------------------------------------------------------------------
 // @name Ivar Claimed 2
-// @error-no-line OJInstanceVariableAlreadyClaimedError
+// @error-no-line NSCInstanceVariableAlreadyClaimedError
 
 @implementation InstanceVariableAlreadyClaimed2
 
@@ -210,7 +210,7 @@ function test() {
 
 @property id foo;
 @dynamic foo;
-@synthesize foo=_bar;   //@error OJPropertyAlreadyDynamicError
+@synthesize foo=_bar;   //@error NSCPropertyAlreadyDynamicError
 
 @end
 
@@ -222,7 +222,7 @@ function test() {
 
 @property id foo;
 @dynamic foo;
-@dynamic foo;       //@error OJPropertyAlreadyDynamicError
+@dynamic foo;       //@error NSCPropertyAlreadyDynamicError
 
 @end
 
@@ -234,7 +234,7 @@ function test() {
 
 @property id foo;
 @synthesize foo=_foo;
-@synthesize foo=_bar;   //@error OJPropertyAlreadySynthesizedError
+@synthesize foo=_bar;   //@error NSCPropertyAlreadySynthesizedError
 
 @end
 
@@ -244,7 +244,7 @@ function test() {
 
 @implementation TestReservedMethod
 
-- (void) isSubclassOfClass:(id)unused { }   //@error OJReservedMethodNameError
+- (void) isSubclassOfClass:(id)unused { }   //@error NSCReservedMethodNameError
 
 @end
 
@@ -254,7 +254,7 @@ function test() {
 
 @implementation TestReservedMethod
 
-- (void) alloc { }  //@error OJReservedMethodNameError
+- (void) alloc { }  //@error NSCReservedMethodNameError
 
 @end
 
@@ -265,7 +265,7 @@ function test() {
 @implementation DuplicateProperty
 
 @property id foo;
-@property id foo;   //@error OJDuplicatePropertyDefinitionError
+@property id foo;   //@error NSCDuplicatePropertyDefinitionError
 
 @end
 
@@ -276,7 +276,7 @@ function test() {
 @implementation DuplicateClass
 @end
 
-@implementation DuplicateClass //@error OJDuplicateDeclarationError
+@implementation DuplicateClass //@error NSCDuplicateDeclarationError
 @end
 
 
@@ -288,7 +288,7 @@ function test() {
 @implementation DuplicateClass
 @end
 
-@implementation DuplicateClass //@error OJDuplicateDeclarationError
+@implementation DuplicateClass //@error NSCDuplicateDeclarationError
 @end
 
 
@@ -298,7 +298,7 @@ function test() {
 @implementation DuplicateMethod
 
 - (void) foo { }
-- (void) foo { }    //@error OJDuplicateMethodDefinitionError
+- (void) foo { }    //@error NSCDuplicateMethodDefinitionError
 
 @end
 
@@ -307,14 +307,14 @@ function test() {
 // @name Duplicate Enum Name
 
 @enum Foo { Foo1, Foo2 }
-@enum Foo { Bar1, Bar2 } //@error OJDuplicateDeclarationError
+@enum Foo { Bar1, Bar2 } //@error NSCDuplicateDeclarationError
 
 
 // --------------------------------------------------------------------
 // @name Duplicate Enum Value 1
 
 @enum Foo { Foo1, Foo2 }
-@enum Bar { Foo1, Foo2 } //@error OJDuplicateDeclarationError
+@enum Bar { Foo1, Foo2 } //@error NSCDuplicateDeclarationError
 
 
 // --------------------------------------------------------------------
@@ -324,33 +324,33 @@ function test() {
 
 @enum {
     Foo2,
-    FooDuplicate //@error OJDuplicateDeclarationError
+    FooDuplicate //@error NSCDuplicateDeclarationError
 }
 
 
 // --------------------------------------------------------------------
 // @name Circular Class 1
 
-@implementation CircularClassA : CircularClassB //@warning OJCircularClassHierarchyWarning
+@implementation CircularClassA : CircularClassB //@warning NSCCircularClassHierarchyWarning
 @end
 
 
-@implementation CircularClassB : CircularClassA //@warning OJCircularClassHierarchyWarning
+@implementation CircularClassB : CircularClassA //@warning NSCCircularClassHierarchyWarning
 @end
 
 // --------------------------------------------------------------------
 // @name Circular Class 2
 
-@implementation CircularClassA : CircularClassB //@warning OJCircularClassHierarchyWarning
+@implementation CircularClassA : CircularClassB //@warning NSCCircularClassHierarchyWarning
 @end
 
-@implementation CircularClassB : CircularClassC //@warning OJCircularClassHierarchyWarning
+@implementation CircularClassB : CircularClassC //@warning NSCCircularClassHierarchyWarning
 @end
 
-@implementation CircularClassC : CircularClassD //@warning OJCircularClassHierarchyWarning
+@implementation CircularClassC : CircularClassD //@warning NSCCircularClassHierarchyWarning
 @end
 
-@implementation CircularClassD : CircularClassA //@warning OJCircularClassHierarchyWarning
+@implementation CircularClassD : CircularClassA //@warning NSCCircularClassHierarchyWarning
 @end
 
 // --------------------------------------------------------------------
@@ -361,7 +361,7 @@ function test() {
 }
 
 - (void) foo {
-    (function(ivar1) {      //@error OJRestrictedUsageError
+    (function(ivar1) {      //@error NSCRestrictedUsageError
     });
 }
 
@@ -379,7 +379,7 @@ function test() {
 }
 
 - (void) foo {
-    var ivar1; //@error OJRestrictedUsageError
+    var ivar1; //@error NSCRestrictedUsageError
 }
 
 @end
@@ -396,7 +396,7 @@ function test() {
     id ivar1;
 }
 
-- (void) foo:(id)ivar1 {  //@error OJRestrictedUsageError
+- (void) foo:(id)ivar1 {  //@error NSCRestrictedUsageError
 
 }
 
@@ -406,7 +406,7 @@ function test() {
 // --------------------------------------------------------------------
 // @name Category No Ivars
 
-@implementation CategoryNoIvars (CategoryName) { //@error OJParseError
+@implementation CategoryNoIvars (CategoryName) { //@error NSCParseError
 
 }
 
@@ -417,7 +417,7 @@ function test() {
 // @name Category Properties Not Yet Supported
 
 @implementation CategoryNoProperties (CategoryName)
-@property String foo; //@error OJNotYetSupportedError
+@property String foo; //@error NSCNotYetSupportedError
 @end
 
 
@@ -426,7 +426,7 @@ function test() {
 // @opts { "warn-debugger": true  }
 
 function foo() {
-    debugger;  //@warning OJUseOfDebuggerWarning
+    debugger;  //@warning NSCUseOfDebuggerWarning
 }
 
 
@@ -434,14 +434,14 @@ function foo() {
 // @name Warn Empty Array
 // @opts { "warn-empty-array-element": true  }
 
-var arr = [,,,,];  //@warning OJUseOfEmptyArrayElementWarning
+var arr = [,,,,];  //@warning NSCUseOfEmptyArrayElementWarning
 
 
 // --------------------------------------------------------------------
 // @name Warn Unused Ivars
 // @opts { "warn-unused-ivars": true  }
 
-@implementation Foo { //@warning OJUnusedInstanceVariableWarning
+@implementation Foo { //@warning NSCUnusedInstanceVariableWarning
     id _bar;
 }
 
@@ -453,7 +453,7 @@ var arr = [,,,,];  //@warning OJUseOfEmptyArrayElementWarning
 // @name Warn Unused Ivars 2
 // @opts { "warn-unused-ivars": true  }
 
-@implementation Foo { //@warning OJUnassignedInstanceVariableWarning
+@implementation Foo { //@warning NSCUnassignedInstanceVariableWarning
     id _bar;
 }
 
@@ -471,7 +471,7 @@ var arr = [,,,,];  //@warning OJUseOfEmptyArrayElementWarning
 // @name Unknown Class
 // @opts { "warn-unknown-superclasses": true  }
 
-@implementation Foo : NonExistantSuperClass //@warning OJUnknownSuperclassWarning
+@implementation Foo : NonExistantSuperClass //@warning NSCUnknownSuperclassWarning
 
 @end
 
@@ -480,13 +480,13 @@ var arr = [,,,,];  //@warning OJUseOfEmptyArrayElementWarning
 // @name Missing Method Name (Protocol)
 
 @protocol MissingMethodName
-- (String); //@error OJParseError
+- (String); //@error NSCParseError
 @end
 
 // --------------------------------------------------------------------
 // @name Missing Method Name (Implementation)
 
 @implementation MissingMethodName
-- (String) { return ""; } //@error OJParseError
+- (String) { return ""; } //@error NSCParseError
 @end
 

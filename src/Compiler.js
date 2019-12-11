@@ -288,6 +288,8 @@ _buildFiles(files, model, options, callback)
             let builder = new Builder(ojFile, model, options);
             builder.build();
             ojFile.buildError = null;
+            // added to pre-fetch variable scopes (outside of the main build loop).
+            builder.buildBlockScopes();
 
         } catch (e) {
             Utils.addFilePathToError(ojFile.path, e);

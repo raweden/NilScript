@@ -605,5 +605,201 @@ build()
     };
 }
 
+/**
+ * Prefetchs the variable scope of all BlockStatement(s) and Program(s)
+ * @return {[type]} [description]
+ */
+buildBlockScopes(){
+
+    let ojFile = this._file;
+    let ast = ojFile.ast
+
+    let traverser = new Traverser(ast);
+
+    let scopeChain = [];
+    let cScope = null;
+
+    function handleBlockStatementNode(blockNode){
+        // prevents the block node to be evaluated twice.
+        if(typeof blockNode._scopeVars !== "undefined"){
+            return;
+        }
+
+        let scopeVars = {};
+        let i, len, node, nodes, name, type;
+        let vard;
+
+        let parentNode = blockNode.oj_parent;
+        if(parentNode){
+            if(parentNode.type == Syntax.OJMethodDefinition && parentNode.methodSelectors){
+
+                nodes = parentNode.methodSelectors;
+                len = nodes.length;
+                for(i = 0;i < len;i++){
+                    node = nodes[i];
+                    if(!node.variableName){
+                        continue;
+                    }
+                    name = node.variableName.name;
+                    type = node.methodType && node.methodType.type == Syntax.OJParameterType ? node.methodType.value : null;
+                    // we need to assert that vard.name is a string value.
+                    if(typeof name !== "string"){
+                        continue;
+                    }
+
+                    vard = {};
+                    vard.kind = "arg"; // var/let/const/arg
+                    vard.name = name;
+                    vard.typed = type;
+                    vard.declaration = node;
+                    // declares the variable in hash map that holds the scope.
+                    // @todo consider to assert that the variable-name is non existing before setting.
+                    scopeVars[name] = vard;
+                }
+
+
+            }else if(parentNode.type == Syntax.FunctionDeclaration){
+
+                nodes = parentNode.params;
+                len = nodes.length;
+                for(i = 0;i < len;i++){
+                    node = nodes[i];
+                    if(!node.name){
+                        continue;
+                    }
+                    name = node.name;
+                    type = node.annotation && node.annotation.type == Syntax.OJTypeAnnotation ? node.annotation.value : null;
+                    // we need to assert that vard.name is a string value.
+                    if(typeof name !== "string"){
+                        continue;
+                    }
+
+                    vard = {};
+                    vard.kind = "arg"; // var/let/const/arg
+                    vard.name = name;
+                    vard.typed = type;
+                    vard.declaration = node;
+
+                    // declares the variable in hash map that holds the scope.
+                    // @todo consider to assert that the variable-name is non existing before setting.
+                    scopeVars[name] = vard;
+                }
+            }
+            // @todo Add handler for when parent is: Syntax.ForStatement; allows one or more variables to be defined.
+            // @todo Add handler for when parent is: Syntax.TryStatement; catch(e) allows for variable?
+        }
+
+        // lets get inside the scope and get all defined var(s) and let(s)
+        nodes = blockNode.body;
+        len = nodes.length;
+
+        for(i = 0;i < len;i++){
+            node = nodes[i];
+            if(node.type !== Syntax.VariableDeclaration){
+                continue;
+            }
+            let declarationSyntax = node.kind;
+            let id;
+            let snode, snodes = node.declarations;  // short for sub-node & sub-nodes
+            let lenV = snodes.length;
+
+            for(let v = 0;v < lenV;v++){
+                snode = snodes[v]; // variable declarion object (esprisma: VariableDeclarator)
+                if(!snode.id){
+                    continue;
+                }
+
+                id = snode.id;
+                name = id.name;
+                type = id.annotation && id.annotation.type == "OJTypeAnnotation" ? id.annotation.value : null;
+
+                //let varId = typeof snode.id && snode.id.type == ";
+                vard = {};
+                vard.kind = declarationSyntax; // var/let/const/arg
+                vard.name = name;
+                vard.typed = type;
+                vard.declaration = snode;
+
+                // @todo consider to assert that the variable-name is non existing before setting.
+                scopeVars[name] = vard;
+            }
+        }
+        blockNode._scopeVars = scopeVars;
+    }
+
+    function handleProgramNode(blockNode){
+        // prevents the block node to be evaluated twice.
+        if(typeof blockNode._scopeVars !== "undefined"){
+            return;
+        }
+
+        let scopeVars = {};
+        let i, len, node, nodes, name, type;
+        let vard;
+        // lets get inside the scope and get all defined var(s) and let(s)
+        nodes = blockNode.body;
+        len = nodes.length;
+
+        for(i = 0;i < len;i++){
+            node = nodes[i];
+            if(node.type !== Syntax.VariableDeclaration){
+                continue;
+            }
+            let declarationSyntax = node.kind;
+            let id;
+            let snode, snodes = node.declarations;  // short for sub-node & sub-nodes
+            let lenV = snodes.length;
+
+            for(let v = 0;v < lenV;v++){
+                snode = snodes[v]; // variable declarion object (esprisma: VariableDeclarator)
+                if(!snode.id){
+                    continue;
+                }
+
+                id = snode.id;
+                name = id.name;
+                type = id.annotation && id.annotation.type == "OJTypeAnnotation" ? id.annotation.value : null;
+
+                //let varId = typeof snode.id && snode.id.type == ";
+                vard = {};
+                vard.kind = declarationSyntax; // var/let/const/arg
+                vard.name = name;
+                vard.typed = type;
+                vard.declaration = snode;
+
+                // @todo consider to assert that the variable-name is non existing before setting.
+                scopeVars[name] = vard;
+            }
+        }
+        blockNode._scopeVars = scopeVars;
+    }
+
+    traverser.traverse(function(node, parent) {
+        let type = node.type;
+        try {
+            if(type === Syntax.BlockStatement){
+                handleBlockStatementNode(node);
+
+            }else if(type === Syntax.Program) {
+                handleProgramNode(node);
+            }
+
+        } catch (e) {
+            if (node) {
+                if (!e.line) {
+                    e.line    = node.loc.start.line;
+                    e.column  = node.loc.start.col;
+                }
+            }
+
+            if (!e.file) {
+                e.file = ojFile.path;
+            }
+
+            throw e;
+        }
+
+    }, function(node, parent){});
+}
 
 }

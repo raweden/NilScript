@@ -1,16 +1,41 @@
 # NilScript
 
+This fork and modification of the [Original NilScript Repository](https://github.com/musictheory/NilScript) its maintained separatly form the project from which this code originates. 
+
 NilScript is a superset of the JavaScript language inspired by the latest versions of Objective-C.  It features a fast, simple runtime without a dynamic messaging overhead. 
 
-NilScript is designed to ease the pain of syncing class interfaces (not necessarily implementations) between Objective-C projects and their web counterparts.
+**Note:** 
+The works beeing done within this branch in this fork is at a alpha stage. Things may change that either alters the behivior of the source-code compiled or breaks the compilation of source-code. No Backwards compatible promised are made and this software is provided "as is". 
 
-In our case, we use it to sync [Tenuto](http://www.musictheory.net/buy/tenuto) with the [musictheory.net exercises](http://www.musictheory.net/exercises), and [Theory Lessons](http://musictheory.net/buy/lessons) with the [musictheory.net lessons](http://www.musictheory.net/lessons).
 
-Note: NilScript was previously known as oj. To comply with [Semantic Versioning](https://semver.org), various parts of the runtime still use "oj" names. This will be addressed in the next major version of the language.
+**Original Note:** NilScript was previously known as oj. To comply with [Semantic Versioning](https://semver.org), various parts of the runtime still use "oj" names. This will be addressed in the next major version of the language.
 
 ### Installation
 
-    npm install nilscript
+As this modification/fork of the [Original NilScript Repository](https://github.com/musictheory/NilScript) its not published to npm. Manual installation is required.
+
+Either download it trough the browser or use git to clone it to your desiered location:
+
+```
+git clone https://github.com/raweden/NilScript.git
+```
+
+Then open the Terminal and navigate to the NilScript main directory, and run the following command using npm to download and install dependencies:
+
+```
+npm install
+```
+
+It will install a few dependencies, most of them for [mocha](https://www.npmjs.com/package/mocha) which is used under the development cycle for running tests.
+
+
+### Differences from [Original NilScript Repository](https://github.com/musictheory/NilScript)
+
+- Added support for accessing instance-variables outside of their `@implementation`scope, this means that we can now access ivars of sub-classes using for example: `self._ivarName` and on other objects using typed/annotated variables, declared like: `let obj:MyClassName` accessed like: `obj._ivarName` in Objective-C ivar are accessed using the `->` notation,
+- Added support for acessing object's declared accessors (properties declared with `@property` using dot notation like `obj.property` these are in the generated code replaced with calls to their setter or getter methods.
+- Allowing compiled code to be using NilScript runtime functions. Some implementations requires dynamic dispatch using `msgSend(receiver, args...)` to enable their features.
+
+If comparing `3.0` branch in the [Original NilScript Repository](https://github.com/musictheory/NilScript) these two repositories are going complety diffrent directions. The `3.0` branch in the original repository is going for a more TypeScript/Swift like language. Which aint gonna happen in within this repository.
 
 ### Main Features
 

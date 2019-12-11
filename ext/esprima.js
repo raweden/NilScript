@@ -5807,10 +5807,34 @@ return /******/ (function(modules) { // webpackBootstrap
 	    Parser.prototype.oj_parseInstanceVariableDeclarations = function () {
 	        var node = this.createNode();
 	        var declarations = [];
+	        var decl = null;
+	        var declarationScope = 'protected';
 	        this.expect('{');
-	        while (!this.match('}')) {
-	            declarations.push(this.oj_parseInstanceVariableDeclaration());
-	            this.consumeSemicolon();
+	        while (true){
+	        	if(this.match('}')){
+	        		break;
+	        	}else if(this.matchContextualKeyword('@public')){
+	        		declarationScope = "public";
+	        		this.nextToken();
+	        		this.consumeSemicolon();
+	        	}else if(this.matchContextualKeyword('@package')){
+	        		declarationScope = "package";
+	        		this.nextToken();
+	        		this.consumeSemicolon();
+	        	}else if(this.matchContextualKeyword('@protected')){
+	        		declarationScope = "protected";
+	        		this.nextToken();
+	        		this.consumeSemicolon();
+	        	}else if(this.matchContextualKeyword('@private')){
+	        		declarationScope = "private";
+	        		this.nextToken();
+	        		this.consumeSemicolon();
+	        	}else{
+		        	decl = this.oj_parseInstanceVariableDeclaration();
+		        	decl.scope = declarationScope;
+		            declarations.push(decl);
+		            this.consumeSemicolon();
+	        	}
 	        }
 	        this.expect('}');
 	        return this.finalize(node, new Node.OJInstanceVariableDeclarations(declarations));

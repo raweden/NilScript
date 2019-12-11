@@ -1,6 +1,33 @@
 CHANGELOG
 
+2.1.1 (branch: "Raweden-Mod")
+
+Added:
+ - Allowing compiled code to use runtime API calls like: `$oj_oj.msgSend()` without trowing error. 
+   If the call expression is not defined within the runtime model a `NSCDollarNSIsReservedError` is trown.
+ - Added `NSRuntimeModel` within the model source code directory. Internal structure may changes, but it defines the 
+   objc like runtime and allows the `Generator.js` to validate runtime API calls.
+ - Added pre-fetch of scoped variables throughout the block chain scope. This is implemented in the Builder.js and uses the same architecture that is already present within the project. 
+ - Added push/pop based scope model within generator, this where needed for the two new features below.
+ - The compiler now generates calls to accessors setter and getter function inline. This requires typed/annotated variables like: `let obj:ClassName`
+    - Resolves defined @property on class and known subclasses.
+    - Works in self context within `@implementation`
+    - Requires typed/annotated variables like: `let obj:ClassName` when not used on self. Works in any block-closure/function-closure compiled by the compiler.
+ - The compiler now generates/replaces instance-variable access point to their runtime names. This requires typed/annotated variables like: `let obj:ClassName`
+    - Resolves ivar(s) on class and known subclasses.
+    - Works in self context within `@implementation`
+    - Requires typed/annotated variables like: `let obj:ClassName` when not used on self. Works in any block-closure/function-closure compiled by the compiler.
+    - Added AST parser support `@private`, `@public`, `@protected` & `@package` directives when declaring ivar(s) but these are not at current enforced at compile time. Implementing this
+      in the Generator.js is work to be done in the future.
+
+Compiler Changes:
+ - Refactored compiler warnings and errors; replaced prefixing OJ with NSC. NSC short for NilScript Compiler.
+
 ---
+
+Changes below are from the original fork from https://github.com/musictheory/NilScript
+
+--- 
 
 2.0.0
 
